@@ -19,7 +19,7 @@ export function LinkField({
     <div className="space-y-1.5">
       <input
         type="url"
-        placeholder={field.config.placeholder ?? "https://…"}
+        placeholder={(field.config?.placeholder as string | undefined) ?? "https://…"}
         value={value ?? ""}
         readOnly={readOnly}
         onChange={(e) => onChange(e.target.value)}

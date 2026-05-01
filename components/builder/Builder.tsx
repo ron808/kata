@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   DndContext,
@@ -37,14 +37,18 @@ export function Builder({ initial, redirectAfterSave }: BuilderProps) {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
+  const [seenInitial, setSeenInitial] = useState(initial);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
   );
 
-  useEffect(() => {
+  // Reset local state when the parent loads a different template.
+  // This is the React-recommended alternative to setState-in-effect for prop-driven resets.
+  if (seenInitial !== initial) {
+    setSeenInitial(initial);
     setTemplate(initial);
     setDirty(false);
-  }, [initial]);
+  }
 
   const update = useCallback(
     (patch: Partial<Template>) => {

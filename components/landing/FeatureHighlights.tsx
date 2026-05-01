@@ -1,20 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 
-function FakeContribution() {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+// Deterministic cells so SSR and client agree. A simple LCG keyed off i — no Math.random,
+// no hydration mismatch, no setState-in-effect.
+const CELLS: number[] = (() => {
+  const out: number[] = [];
+  let seed = 0x9e3779b1;
+  for (let i = 0; i < 7 * 26; i++) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    const r = seed / 0xffffffff;
+    out.push(r < 0.55 ? Math.floor((seed % 5)) : 0);
+  }
+  return out;
+})();
 
-  const cells = useMemo(() => {
-    if (!mounted) return new Array(7 * 26).fill(0);
-    const out: number[] = [];
-    for (let i = 0; i < 7 * 26; i++) {
-      out.push(Math.random() < 0.55 ? Math.floor(Math.random() * 5) : 0);
-    }
-    return out;
-  }, [mounted]);
+function FakeContribution() {
+  const cells = CELLS;
 
   const cols: number[][] = [];
   for (let i = 0; i < cells.length; i += 7) cols.push(cells.slice(i, i + 7));

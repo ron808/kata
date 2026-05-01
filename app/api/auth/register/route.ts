@@ -21,15 +21,26 @@ export async function POST(request: Request) {
     if (existing) return jsonError("That email is already registered.", 409);
 
     const passwordHash = await bcrypt.hash(data.password, 12);
-    const user = await User.create({
-      name: data.name,
-      email: data.email,
-      passwordHash,
-      role: data.role,
-      timezone: data.timezone,
-    });
-
-    return NextResponse.json({ id: String(user._id) }, { status: 201 });
+    try {
+      const user = await User.create({
+        name: data.name,
+        email: data.email,
+        passwordHash,
+        role: data.role,
+        timezone: data.timezone,
+      });
+      return NextResponse.json({ id: String(user._id) }, { status: 201 });
+    } catch (err) {
+      // Concurrent signup with the same email loses the findOne race; surface 409 instead of 500.
+      if (
+        err &&
+        typeof err === "object" &&
+        (err as { code?: number }).code === 11000
+      ) {
+        return jsonError("That email is already registered.", 409);
+      }
+      throw err;
+    }
   } catch (err) {
     return handleError(err);
   }

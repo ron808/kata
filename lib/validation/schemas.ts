@@ -67,15 +67,21 @@ export const EntryFieldSchema = z.object({
   value: EntryFieldValueSchema,
 });
 
+const IsoDateString = z
+  .string()
+  .refine((s) => !Number.isNaN(new Date(s).getTime()), {
+    message: "Invalid date",
+  });
+
 export const EntryUpsertSchema = z.object({
   fields: z.array(EntryFieldSchema).max(20),
-  date: z.string().optional(), // ISO yyyy-mm-dd; defaults to today
+  date: IsoDateString.optional(), // ISO yyyy-mm-dd or full ISO 8601; defaults to today
 });
 
 export const EntriesQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(20),
   tag: z.string().optional(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
+  startDate: IsoDateString.optional(),
+  endDate: IsoDateString.optional(),
 });

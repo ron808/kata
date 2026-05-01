@@ -3,7 +3,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { motion, AnimatePresence } from "framer-motion";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { TemplateField } from "@/lib/types";
 import { FIELD_TYPE_META } from "./fieldTypes";
 import { FieldConfig } from "./FieldConfig";
@@ -23,21 +23,24 @@ export function FieldCard({
   const [holdProgress, setHoldProgress] = useState(0);
   const meta = FIELD_TYPE_META[field.type];
 
-  let holdTimer: ReturnType<typeof setInterval> | null = null;
+  const holdTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   function startHold() {
     setHoldProgress(0);
     const start = Date.now();
-    holdTimer = setInterval(() => {
+    if (holdTimer.current) clearInterval(holdTimer.current);
+    holdTimer.current = setInterval(() => {
       const p = Math.min(1, (Date.now() - start) / 400);
       setHoldProgress(p);
       if (p >= 1) {
-        if (holdTimer) clearInterval(holdTimer);
+        if (holdTimer.current) clearInterval(holdTimer.current);
+        holdTimer.current = null;
         onRemove();
       }
     }, 16);
   }
   function endHold() {
-    if (holdTimer) clearInterval(holdTimer);
+    if (holdTimer.current) clearInterval(holdTimer.current);
+    holdTimer.current = null;
     setHoldProgress(0);
   }
 

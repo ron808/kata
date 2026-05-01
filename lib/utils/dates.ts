@@ -5,6 +5,9 @@
  */
 export function toUtcMidnight(d: Date | string): Date {
   const date = typeof d === "string" ? new Date(d) : d;
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Invalid date: ${String(d)}`);
+  }
   return new Date(
     Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
   );

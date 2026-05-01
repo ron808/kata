@@ -48,7 +48,7 @@ const TemplateSchema = new Schema<ITemplate>(
     name: { type: String, required: true, trim: true },
     description: { type: String, default: "" },
     isPublished: { type: Boolean, default: false },
-    publishedSlug: { type: String, default: null, unique: true, sparse: true },
+    publishedSlug: { type: String, default: null },
     cloneCount: { type: Number, default: 0 },
     clonedFrom: {
       type: Schema.Types.ObjectId,
@@ -62,6 +62,15 @@ const TemplateSchema = new Schema<ITemplate>(
 );
 
 TemplateSchema.index({ isPublished: 1, cloneCount: -1 });
+// Partial index — sparse: true does NOT skip docs where the field is null, only when missing.
+// Since we explicitly default publishedSlug to null, sparse would still collide on the second insert.
+TemplateSchema.index(
+  { publishedSlug: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { publishedSlug: { $type: "string" } },
+  }
+);
 
 export const Template: Model<ITemplate> =
   mongoose.models.Template ?? mongoose.model<ITemplate>("Template", TemplateSchema);

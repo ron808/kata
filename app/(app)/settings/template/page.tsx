@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { nanoid } from "nanoid";
 import { auth } from "@/lib/auth/authOptions";
 import { connectDB } from "@/lib/db/mongoose";
 import { User } from "@/lib/db/models/User";
@@ -24,7 +25,7 @@ export default async function TemplateBuilderPage() {
       tags: [],
       fields: [
         {
-          id: Math.random().toString(36).slice(2, 10),
+          id: nanoid(8),
           type: "long_text",
           label: "How was today?",
           required: true,
@@ -54,7 +55,7 @@ export default async function TemplateBuilderPage() {
       label: f.label,
       required: f.required,
       order: f.order,
-      config: f.config as Record<string, unknown>,
+      config: (f.config as Record<string, unknown>) ?? {},
     })),
   };
 

@@ -97,6 +97,8 @@ export async function PATCH(
       date: entry.date.toISOString(),
       wordCount: entry.wordCount,
       tags: entry.tags,
+      fields: entry.fields,
+      templateId: String(entry.templateId),
     });
   } catch (err) {
     return handleError(err);

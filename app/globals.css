@@ -82,6 +82,13 @@ select:focus-visible,
   border-color: #e8a05c;
 }
 
+/* Journaling inputs (long/short text in the entry form) opt out of the boxed ring —
+   they already use a bottom-border accent on focus, so the ring looks redundant and harsh. */
+input.entry-caret:focus-visible,
+textarea.entry-caret:focus-visible {
+  box-shadow: none;
+}
+
 button:focus-visible,
 a:focus-visible {
   outline: none;

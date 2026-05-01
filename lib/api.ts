@@ -28,10 +28,19 @@ export function handleError(err: unknown) {
         503
       );
     }
+    if (/bad auth|authentication failed/i.test(err.message)) {
+      return jsonError(
+        "Database connection rejected. Check Mongo credentials.",
+        503
+      );
+    }
     if (err.message === "Unauthorized") return jsonError("Unauthorized", 401);
     if (err.message === "Forbidden") return jsonError("Forbidden", 403);
     if (err.message === "Not found") return jsonError("Not found", 404);
-    return jsonError(err.message, 500);
+    // Avoid leaking raw driver/internal messages to clients.
+    console.error("api:unhandled", err);
+    return jsonError("Internal error", 500);
   }
+  console.error("api:unhandled", err);
   return jsonError("Internal error", 500);
 }

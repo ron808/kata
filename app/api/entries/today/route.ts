@@ -24,6 +24,7 @@ export async function GET() {
         wordCount: entry.wordCount,
         tags: entry.tags,
         fields: entry.fields,
+        templateId: String(entry.templateId),
       },
     });
   } catch (err) {

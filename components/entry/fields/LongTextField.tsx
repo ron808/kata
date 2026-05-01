@@ -27,12 +27,12 @@ export function LongTextField({
   return (
     <textarea
       ref={ref}
-      placeholder={field.config.placeholder ?? "Write something…"}
+      placeholder={(field.config?.placeholder as string | undefined) ?? "Write something…"}
       value={value ?? ""}
       readOnly={readOnly}
       onChange={(e) => onChange(e.target.value)}
       rows={3}
-      className="w-full resize-none overflow-hidden bg-transparent border-b border-border-strong px-0 py-3 text-[18px] leading-[1.75] font-serif text-text-primary placeholder:text-text-muted placeholder:italic entry-caret transition-colors focus:border-accent"
+      className="w-full resize-none overflow-hidden bg-transparent border-b-2 border-border-strong px-0 py-3 text-[20px] leading-[1.7] font-sans font-normal tracking-[-0.005em] text-text-primary placeholder:text-text-muted placeholder:font-normal entry-caret transition-colors focus:border-accent"
     />
   );
 }

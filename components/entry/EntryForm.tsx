@@ -177,7 +177,7 @@ export function EntryForm({
             className="space-y-3"
           >
             {field.type !== "divider" && (
-              <label className="block text-[10.5px] uppercase tracking-[0.22em] font-mono text-text-muted">
+              <label className="block text-[12px] uppercase tracking-[0.18em] font-mono font-medium text-text-secondary">
                 {field.label}
                 {field.required && (
                   <span className="text-accent ml-1.5">*</span>

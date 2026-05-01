@@ -16,7 +16,7 @@ export function TagField({
   readOnly?: boolean;
 }) {
   const [draft, setDraft] = useState("");
-  const allowed = (field.config.allowedTags as string[] | undefined) ?? [];
+  const allowed = (field.config?.allowedTags as string[] | undefined) ?? [];
   const list = value ?? [];
 
   function add(tag: string) {

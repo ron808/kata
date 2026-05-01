@@ -13,9 +13,9 @@ export function NumberField({
   onChange: (v: number | null) => void;
   readOnly?: boolean;
 }) {
-  const unit = field.config.unit as string | undefined;
-  const min = field.config.min as number | undefined;
-  const max = field.config.max as number | undefined;
+  const unit = field.config?.unit as string | undefined;
+  const min = field.config?.min as number | undefined;
+  const max = field.config?.max as number | undefined;
 
   return (
     <div className="flex items-center gap-3">

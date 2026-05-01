@@ -65,7 +65,7 @@ export default async function ViewEntryPage(props: {
                 label: tplField.label,
                 required: tplField.required,
                 order: tplField.order,
-                config: tplField.config as Record<string, unknown>,
+                config: (tplField.config as Record<string, unknown>) ?? {},
               }
             : {
                 id: f.fieldId,
@@ -85,7 +85,6 @@ export default async function ViewEntryPage(props: {
               <FieldRenderer
                 field={field}
                 value={f.value as never}
-                onChange={() => {}}
                 readOnly
               />
             </div>

@@ -44,7 +44,7 @@ export default async function NewEntryPage() {
             label: f.label,
             required: f.required,
             order: f.order,
-            config: f.config as Record<string, unknown>,
+            config: (f.config as Record<string, unknown>) ?? {},
           })),
         };
         const today = todayUtcMidnight();

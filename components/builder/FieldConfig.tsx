@@ -16,7 +16,7 @@ export function FieldConfig({
     onChange({ ...field, required });
   }
   function setConfig(patch: Record<string, unknown>) {
-    onChange({ ...field, config: { ...field.config, ...patch } });
+    onChange({ ...field, config: { ...(field.config ?? {}), ...patch } });
   }
 
   if (field.type === "divider") {
@@ -24,7 +24,7 @@ export function FieldConfig({
       <div className="space-y-3">
         <Field label="Section label">
           <input
-            value={(field.config.sectionLabel as string) ?? ""}
+            value={(field.config?.sectionLabel as string) ?? ""}
             onChange={(e) => setConfig({ sectionLabel: e.target.value })}
             placeholder="Optional"
             className="w-full bg-bg-base border border-border rounded-md px-3 py-2 text-sm focus:border-accent"
@@ -47,7 +47,7 @@ export function FieldConfig({
       {(field.type === "short_text" || field.type === "long_text" || field.type === "link") && (
         <Field label="Placeholder">
           <input
-            value={(field.config.placeholder as string) ?? ""}
+            value={(field.config?.placeholder as string) ?? ""}
             onChange={(e) => setConfig({ placeholder: e.target.value })}
             className="w-full bg-bg-base border border-border rounded-md px-3 py-2 text-sm focus:border-accent"
           />
@@ -58,7 +58,7 @@ export function FieldConfig({
         <div className="grid grid-cols-3 gap-2">
           <Field label="Unit">
             <input
-              value={(field.config.unit as string) ?? ""}
+              value={(field.config?.unit as string) ?? ""}
               onChange={(e) => setConfig({ unit: e.target.value })}
               className="w-full bg-bg-base border border-border rounded-md px-3 py-2 text-sm focus:border-accent"
             />
@@ -66,7 +66,7 @@ export function FieldConfig({
           <Field label="Min">
             <input
               type="number"
-              value={(field.config.min as number) ?? ""}
+              value={(field.config?.min as number) ?? ""}
               onChange={(e) =>
                 setConfig({ min: e.target.value === "" ? undefined : Number(e.target.value) })
               }
@@ -76,7 +76,7 @@ export function FieldConfig({
           <Field label="Max">
             <input
               type="number"
-              value={(field.config.max as number) ?? ""}
+              value={(field.config?.max as number) ?? ""}
               onChange={(e) =>
                 setConfig({ max: e.target.value === "" ? undefined : Number(e.target.value) })
               }
@@ -90,14 +90,14 @@ export function FieldConfig({
         <div className="grid grid-cols-2 gap-2">
           <Field label="Yes label">
             <input
-              value={(field.config.yesLabel as string) ?? "Yes"}
+              value={(field.config?.yesLabel as string) ?? "Yes"}
               onChange={(e) => setConfig({ yesLabel: e.target.value })}
               className="w-full bg-bg-base border border-border rounded-md px-3 py-2 text-sm focus:border-accent"
             />
           </Field>
           <Field label="No label">
             <input
-              value={(field.config.noLabel as string) ?? "No"}
+              value={(field.config?.noLabel as string) ?? "No"}
               onChange={(e) => setConfig({ noLabel: e.target.value })}
               className="w-full bg-bg-base border border-border rounded-md px-3 py-2 text-sm focus:border-accent"
             />
@@ -109,7 +109,7 @@ export function FieldConfig({
         <Field label="Emojis (5 levels, comma-separated)">
           <input
             value={
-              ((field.config.emojis as string[]) ?? ["😞", "😕", "😐", "🙂", "😄"]).join(",")
+              ((field.config?.emojis as string[]) ?? ["😞", "😕", "😐", "🙂", "😄"]).join(",")
             }
             onChange={(e) =>
               setConfig({

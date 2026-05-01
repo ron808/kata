@@ -19,16 +19,19 @@ export function FieldRenderer({
 }: {
   field: TemplateField;
   value: FieldValue;
-  onChange: (v: FieldValue) => void;
+  // Optional so server components rendering in read-only mode don't have to pass a function
+  // (event handlers cannot cross the server/client boundary).
+  onChange?: (v: FieldValue) => void;
   readOnly?: boolean;
 }) {
+  const handleChange = onChange ?? (() => {});
   switch (field.type) {
     case "short_text":
       return (
         <ShortTextField
           field={field}
           value={(value as string) ?? ""}
-          onChange={onChange}
+          onChange={handleChange}
           readOnly={readOnly}
         />
       );
@@ -37,7 +40,7 @@ export function FieldRenderer({
         <LongTextField
           field={field}
           value={(value as string) ?? ""}
-          onChange={onChange}
+          onChange={handleChange}
           readOnly={readOnly}
         />
       );
@@ -46,7 +49,7 @@ export function FieldRenderer({
         <MoodSlider
           field={field}
           value={(value as number | null) ?? null}
-          onChange={onChange}
+          onChange={handleChange}
           readOnly={readOnly}
         />
       );
@@ -55,7 +58,7 @@ export function FieldRenderer({
         <EnergyLevel
           field={field}
           value={(value as number | null) ?? null}
-          onChange={onChange}
+          onChange={handleChange}
           readOnly={readOnly}
         />
       );
@@ -64,7 +67,7 @@ export function FieldRenderer({
         <NumberField
           field={field}
           value={(value as number | null) ?? null}
-          onChange={onChange}
+          onChange={handleChange}
           readOnly={readOnly}
         />
       );
@@ -73,7 +76,7 @@ export function FieldRenderer({
         <TagField
           field={field}
           value={(value as string[]) ?? []}
-          onChange={onChange}
+          onChange={handleChange}
           readOnly={readOnly}
         />
       );
@@ -82,7 +85,7 @@ export function FieldRenderer({
         <YesNoField
           field={field}
           value={(value as boolean | null) ?? null}
-          onChange={onChange}
+          onChange={handleChange}
           readOnly={readOnly}
         />
       );
@@ -90,7 +93,7 @@ export function FieldRenderer({
       return (
         <RatingField
           value={(value as number | null) ?? null}
-          onChange={onChange}
+          onChange={handleChange}
           readOnly={readOnly}
         />
       );
@@ -99,7 +102,7 @@ export function FieldRenderer({
         <LinkField
           field={field}
           value={(value as string) ?? ""}
-          onChange={onChange}
+          onChange={handleChange}
           readOnly={readOnly}
         />
       );
@@ -107,7 +110,7 @@ export function FieldRenderer({
       return (
         <div className="flex items-center gap-3 py-1">
           <div className="flex-1 h-px bg-border" />
-          {field.config.sectionLabel ? (
+          {field.config?.sectionLabel ? (
             <span className="text-xs uppercase tracking-widest text-text-muted font-mono">
               {field.config.sectionLabel as string}
             </span>

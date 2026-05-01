@@ -14,8 +14,8 @@ export function YesNoField({
   onChange: (v: boolean) => void;
   readOnly?: boolean;
 }) {
-  const yesLabel = (field.config.yesLabel as string) ?? "Yes";
-  const noLabel = (field.config.noLabel as string) ?? "No";
+  const yesLabel = (field.config?.yesLabel as string) ?? "Yes";
+  const noLabel = (field.config?.noLabel as string) ?? "No";
   return (
     <div className="grid grid-cols-2 gap-2 max-w-md">
       {[

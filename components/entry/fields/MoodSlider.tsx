@@ -16,7 +16,7 @@ export function MoodSlider({
   onChange: (v: number) => void;
   readOnly?: boolean;
 }) {
-  const emojis = (field.config.emojis as string[] | undefined) ?? DEFAULT_EMOJIS;
+  const emojis = (field.config?.emojis as string[] | undefined) ?? DEFAULT_EMOJIS;
 
   return (
     <div className="flex items-center gap-2">
