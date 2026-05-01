@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     const existing = await User.findOne({ email: data.email }).lean();
     if (existing) return jsonError("That email is already registered.", 409);
 
-    const passwordHash = await bcrypt.hash(data.password, 12);
+    const passwordHash = await bcrypt.hash(data.password, 10);
     try {
       const user = await User.create({
         name: data.name,
