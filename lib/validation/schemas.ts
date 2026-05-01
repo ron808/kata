@@ -52,6 +52,15 @@ export const LoginSchema = z.object({
   password: z.string().min(1),
 });
 
+export const ForgotPasswordSchema = z.object({
+  email: z.string().email().toLowerCase(),
+});
+
+export const ResetPasswordSchema = z.object({
+  token: z.string().min(20).max(200),
+  password: z.string().min(8).max(120),
+});
+
 export const EntryFieldValueSchema = z.union([
   z.string(),
   z.number(),

@@ -19,6 +19,8 @@ export const limiters = {
   register: make(3, "1 h"),
   login: make(10, "15 m"),
   entryCreate: make(5, "1 d"),
+  forgotPassword: make(5, "1 h"),
+  resetPassword: make(10, "1 h"),
   general: make(120, "1 m"),
 };
 
