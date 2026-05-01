@@ -21,7 +21,13 @@ export default async function NewEntryPage() {
 
   try {
     await connectDB();
-    const user = await User.findById(session.user.id).lean();
+    const today = todayUtcMidnight();
+    // User and today's entry have no dependency on each other — fetch in parallel.
+    // The template lookup must wait for the user (it depends on activeTemplateId).
+    const [user, existing] = await Promise.all([
+      User.findById(session.user.id).select("activeTemplateId").lean(),
+      Entry.findOne({ userId: session.user.id, date: today }).lean(),
+    ]);
     if (!user?.activeTemplateId) {
       needsOnboarding = true;
     } else {
@@ -47,11 +53,6 @@ export default async function NewEntryPage() {
             config: (f.config as Record<string, unknown>) ?? {},
           })),
         };
-        const today = todayUtcMidnight();
-        const existing = await Entry.findOne({
-          userId: session.user.id,
-          date: today,
-        }).lean();
         if (existing) {
           initialFields = (existing.fields ?? []).map((f) => ({
             fieldId: f.fieldId,

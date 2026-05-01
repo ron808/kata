@@ -16,20 +16,22 @@ export default async function HistoryPage(props: {
   const filter: Record<string, unknown> = { userId: session!.user.id };
   if (tag) filter.tags = tag;
 
-  const entries = await Entry.find(filter)
-    .sort({ date: -1 })
-    .skip((pageNum - 1) * limit)
-    .limit(limit)
-    .lean();
-  const total = await Entry.countDocuments(filter);
-
-  // Get all unique tags for filter UI
-  const allTagsAgg = await Entry.aggregate([
-    { $match: { userId: session!.user.id } },
-    { $unwind: "$tags" },
-    { $group: { _id: "$tags", count: { $sum: 1 } } },
-    { $sort: { count: -1 } },
-    { $limit: 20 },
+  const [entries, total, allTagsAgg] = await Promise.all([
+    Entry.find(filter)
+      .select("date wordCount tags fields")
+      .sort({ date: -1 })
+      .skip((pageNum - 1) * limit)
+      .limit(limit)
+      .lean(),
+    Entry.countDocuments(filter),
+    // All unique tags for the filter UI.
+    Entry.aggregate([
+      { $match: { userId: session!.user.id } },
+      { $unwind: "$tags" },
+      { $group: { _id: "$tags", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 20 },
+    ]),
   ]);
 
   return (

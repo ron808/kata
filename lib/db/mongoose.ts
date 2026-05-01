@@ -24,6 +24,14 @@ export async function connectDB() {
   if (!cached.promise) {
     cached.promise = mongoose.connect(MONGODB_URI, {
       bufferCommands: false,
+      // Serverless tuning: keep the pool small and fail fast instead of
+      // hanging on unreachable clusters.
+      maxPoolSize: 5,
+      minPoolSize: 0,
+      serverSelectionTimeoutMS: 5_000,
+      socketTimeoutMS: 45_000,
+      // Skip auto-discovery on every cold start; we only have one connection.
+      maxIdleTimeMS: 30_000,
     });
   }
   cached.conn = await cached.promise;

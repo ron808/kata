@@ -41,18 +41,19 @@ interface LoadedData {
 async function loadData(userId: string): Promise<LoadedData> {
   try {
     await connectDB();
-    const user = await User.findById(userId).lean();
-    const entries = await Entry.find({ userId })
-      .sort({ date: -1 })
-      .limit(366)
-      .lean();
+    const [user, entries, pinned] = await Promise.all([
+      User.findById(userId).lean(),
+      Entry.find({ userId })
+        .select("date wordCount tags fields")
+        .sort({ date: -1 })
+        .limit(366)
+        .lean(),
+      Digest.findOne({ userId, isRead: false }).sort({ createdAt: -1 }).lean(),
+    ]);
     const today = todayUtcMidnight();
     const todayEntry =
       entries.find((e) => isoDay(e.date) === isoDay(today)) ?? null;
     const recent = entries.slice(0, 5);
-    const pinned = await Digest.findOne({ userId, isRead: false })
-      .sort({ createdAt: -1 })
-      .lean();
     const totalEntries = user?.totalEntries ?? entries.length;
     const totalWords =
       user?.totalWords ??
