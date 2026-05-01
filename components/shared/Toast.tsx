@@ -30,16 +30,21 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastCtx.Provider value={{ toast }}>
       {children}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none">
+      <div
+        aria-live="polite"
+        aria-atomic="true"
+        className="fixed top-[68px] right-3 left-3 md:top-6 md:right-6 md:left-auto z-50 flex flex-col items-stretch md:items-end gap-2 pointer-events-none"
+      >
         <AnimatePresence>
           {items.map((item) => (
             <motion.div
               key={item.id}
-              initial={{ opacity: 0, y: 20, scale: 0.96 }}
+              role="status"
+              initial={{ opacity: 0, y: -16, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 10, scale: 0.96 }}
+              exit={{ opacity: 0, y: -8, scale: 0.96 }}
               transition={{ type: "spring", stiffness: 300, damping: 26 }}
-              className={`pointer-events-auto rounded-xl border px-4 py-3 text-sm shadow-2xl backdrop-blur-md max-w-sm ${
+              className={`pointer-events-auto rounded-xl border px-4 py-3 text-sm shadow-2xl backdrop-blur-md w-full md:max-w-sm md:w-auto ${
                 item.tone === "success"
                   ? "border-success/40 bg-success/10 text-success"
                   : item.tone === "danger"

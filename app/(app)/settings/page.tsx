@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/db/mongoose";
 import { User } from "@/lib/db/models/User";
 import { Template } from "@/lib/db/models/Template";
 import { PublishToggle } from "@/components/settings/PublishToggle";
+import { ChangePasswordForm } from "@/components/settings/ChangePasswordForm";
 
 export default async function SettingsPage() {
   const session = await auth();
@@ -74,6 +75,14 @@ export default async function SettingsPage() {
         <Row label="Total words" value={(user?.totalWords ?? 0).toLocaleString()} mono />
         <Row label="Current streak" value={`${user?.streak ?? 0} days`} mono />
         <Row label="Longest streak" value={`${user?.longestStreak ?? 0} days`} mono />
+      </Section>
+
+      <Section title="Security">
+        <p className="text-sm text-text-secondary -mt-1 mb-2">
+          Change your password while signed in. We&apos;ll verify your current
+          one first.
+        </p>
+        <ChangePasswordForm />
       </Section>
     </div>
   );
