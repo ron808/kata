@@ -1,65 +1,82 @@
-import Image from "next/image";
+import Link from "next/link";
+import { Logo } from "@/components/shared/Logo";
+import { LandingHero } from "@/components/landing/LandingHero";
+import { RolePreview } from "@/components/landing/RolePreview";
+import { FeatureHighlights } from "@/components/landing/FeatureHighlights";
+import { TemplateGalleryTeaser } from "@/components/landing/TemplateGalleryTeaser";
 
-export default function Home() {
+export default function LandingPage() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="min-h-screen flex flex-col">
+      <header className="sticky top-0 z-30 border-b border-border/60 bg-bg-base/80 backdrop-blur-md">
+        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+          <Logo />
+          <nav className="flex items-center gap-1 text-sm">
+            <Link
+              href="/login"
+              className="text-text-secondary hover:text-text-primary px-4 py-2 rounded-md transition-colors"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+              Log in
+            </Link>
+            <Link
+              href="/register"
+              className="bg-accent hover:bg-accent-hover text-bg-base font-medium px-4 py-2 rounded-md transition-colors"
             >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              Start free
+            </Link>
+          </nav>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+      </header>
+
+      <main className="flex-1">
+        <LandingHero />
+        <RolePreview />
+        <FeatureHighlights />
+        <TemplateGalleryTeaser />
+
+        <section className="py-24 px-6 border-t border-border/60">
+          <div className="max-w-3xl mx-auto text-center">
+            <p className="font-serif italic text-3xl md:text-5xl leading-[1.15] tracking-tight text-text-primary">
+              &ldquo;The good kind of habit isn&apos;t loud — <span className="text-accent">it&apos;s the quiet thing you keep showing up for.</span>&rdquo;
+            </p>
+            <div className="mt-10 flex items-center justify-center gap-6">
+              <Link
+                href="/register"
+                className="bg-accent hover:bg-accent-hover text-bg-base font-medium px-7 py-4 rounded-md btn-glow transition-colors inline-flex items-center gap-2"
+              >
+                Begin volume one <span aria-hidden>→</span>
+              </Link>
+              <Link
+                href="/login"
+                className="text-text-secondary hover:text-text-primary text-base"
+              >
+                Already writing? Log in
+              </Link>
+            </div>
+          </div>
+        </section>
       </main>
+
+      <footer className="border-t border-border py-12 px-6">
+        <div className="max-w-6xl mx-auto grid md:grid-cols-3 gap-8 text-sm text-text-muted items-start">
+          <div>
+            <Logo className="text-text-primary" />
+            <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.22em]">
+              型 — form, structure, pattern
+            </p>
+          </div>
+          <nav className="flex flex-col gap-1.5 text-text-secondary">
+            <span className="text-[11px] uppercase tracking-[0.22em] text-text-muted font-mono mb-1">
+              The journal
+            </span>
+            <Link href="/login" className="hover:text-accent">Log in</Link>
+            <Link href="/register" className="hover:text-accent">Start writing</Link>
+          </nav>
+          <div className="font-serif italic text-text-secondary text-lg leading-snug">
+            A small, slow website. Built to be useful for a long time.
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

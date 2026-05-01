@@ -1,26 +1,172 @@
 @import "tailwindcss";
 
+@theme {
+  /* Backgrounds — warm midnight ink */
+  --color-bg-base: #0e0c10;
+  --color-bg-surface: #181318;
+  --color-bg-elevated: #221c22;
+
+  /* Borders */
+  --color-border: #2a2329;
+  --color-border-strong: #3a3036;
+
+  /* Text — parchment, on ink */
+  --color-text-primary: #fdf6e3;
+  --color-text-secondary: #d4c4ad;
+  --color-text-muted: #9a8b78;
+
+  /* Accents — saffron + terracotta + sage */
+  --color-accent: #e8a05c;
+  --color-accent-hover: #f0b276;
+  --color-accent-2: #cf6f4d;
+  --color-success: #8db580;
+  --color-warning: #e8a05c;
+  --color-danger: #d96560;
+
+  /* Fonts */
+  --font-serif: var(--font-instrument-serif), "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SFMono-Regular", monospace;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+html, body {
+  background: #0e0c10;
+  color: #fdf6e3;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv11";
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Subtle paper grain across the whole app */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+body > * { position: relative; z-index: 1; }
+
+::selection {
+  background: rgba(232, 160, 92, 0.4);
+  color: #0e0c10;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: #2a2329;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: #3a3036; background-clip: padding-box; }
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[contenteditable]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(232, 160, 92, 0.45);
+  border-color: #e8a05c;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(232, 160, 92, 0.45);
+}
+
+/* Display headings default to serif italic */
+.font-serif { font-family: var(--font-serif); }
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer-border::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    110deg,
+    rgba(232, 160, 92, 0.1) 0%,
+    rgba(232, 160, 92, 0.55) 35%,
+    rgba(207, 111, 77, 0.4) 50%,
+    rgba(232, 160, 92, 0.55) 65%,
+    rgba(232, 160, 92, 0.1) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 5s linear infinite;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.btn-glow {
+  box-shadow:
+    0 0 0 1px rgba(232, 160, 92, 0.5),
+    0 12px 32px -10px rgba(232, 160, 92, 0.45);
+}
+
+.entry-caret { caret-color: #e8a05c; }
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] { -moz-appearance: textfield; }
+
+/* Editorial dividers */
+.rule-thick { border-top: 4px double #3a3036; }
+.rule-fine  { border-top: 1px solid #2a2329; }
+
+/* Hero ambient glow */
+.glow-radial {
+  background: radial-gradient(
+    ellipse 900px 500px at 50% -10%,
+    rgba(232, 160, 92, 0.18),
+    transparent 65%
+  );
+}
+
+.dot-grid {
+  background-image: radial-gradient(circle, rgba(232, 160, 92, 0.07) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* Drop cap utility for editorial passages */
+.dropcap::first-letter {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 4.2em;
+  line-height: 0.85;
+  float: left;
+  margin: 0.08em 0.08em 0 0;
+  color: #e8a05c;
+}
+
+/* Number pill for ordered editorial sections */
+.numeral {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-feature-settings: "lnum";
 }
