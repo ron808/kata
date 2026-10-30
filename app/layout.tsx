@@ -24,7 +24,7 @@ export const metadata: Metadata = {
   title: "Kata · the journal that checks in on you",
   description:
     "Write a little each day. Kata keeps track of what you're working on, checks in on it, asks better questions, and lets you share the good bits with your people.",
-  metadataBase: new URL("https://kata.app"),
+  metadataBase: new URL("https://kata-day.vercel.app"),
   openGraph: {
     title: "Kata · the journal that checks in on you",
     description:
