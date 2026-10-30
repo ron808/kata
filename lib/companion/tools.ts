@@ -19,7 +19,7 @@ import { handleOf, normalizeHandle } from "@/lib/social/handles";
 import type { EntryField, FieldType, FieldValue, ReplyT } from "@/lib/types";
 import { todayUtcMidnight } from "@/lib/utils/dates";
 import type { EngineCtx } from "./engine";
-import { FIELDS_MAX, TRACKED_KINDS, fieldKey, guessFields, parseTrack, specText, valueText } from "./fields";
+import { FIELDS_MAX, TRACKED_KINDS, fieldKey, guessFields, parseTrack, specText, valueText, valuesIn } from "./fields";
 import { applyInputs, complete, ideas, input, logChoice } from "./forms";
 import { COMPANION_COLOURS, COMPANION_NAME_MAX, NAME_IDEAS, NICKNAME_MAX, tidyName } from "./name";
 import { nameReceipts } from "./naming";
@@ -67,10 +67,12 @@ export interface Turn {
   screen: ScreenItem[];
   /** The one they're on. */
   here: string | null;
+  /** The words of the exchange just before, for "yes" and "log it". Null when they tapped: a tap is always on topic. */
+  before: string | null;
 }
 
 export function newTurn(ctx: EngineCtx, said: string, screen: ScreenItem[] = [], where: string | null = null, here: string | null = null): Turn {
-  return { ctx, said, where: where?.split(/[?#]/)[0] ?? null, replies: [], choices: [], ask: null, changed: false, actions: [], done: [], screen, here };
+  return { ctx, said, where: where?.split(/[?#]/)[0] ?? null, replies: [], choices: [], ask: null, changed: false, actions: [], done: [], screen, here, before: null };
 }
 
 type Args = Record<string, unknown>;
@@ -170,7 +172,7 @@ const offerChoicesTool = (tools: string[]) =>
     "offer_choices",
     "Two to four buttons instead of an open question. One with `do` runs that tool when tapped (an argument left out becomes a form for it); one without is an answer they tap. Name the thing in each label (Track “Fix the leak”, Due Friday). There's always a Not now button.",
     {
-      ask: { type: "string", description: "One short line above the buttons." },
+      ask: { type: "string", description: "A short question above the buttons, in your own voice (“Want to keep track of that?”). Never a label or an order like “Create a new habit”." },
       choices: {
         type: "array",
         items: {
@@ -222,7 +224,7 @@ const TOOLS: Record<string, ChatCompletionTool> = {
     "create_thread",
     "Start tracking something new: a project, task, goal, habit, person or event. Leave out what they haven't said: they get a form for it.",
     {
-      title: { type: "string", description: "Two to four words. Leave out if they haven't said what it is." },
+      title: { type: "string", description: "Two to four words, from their message or what you were just talking about. Leave out only if you can't tell what it is." },
       ideas: { type: "array", items: { type: "string" }, description: "No title: two or three likely ones, from what you know about them." },
       kind: { type: "string", enum: [...THREAD_KINDS] },
       status: { type: "string", enum: [...THREAD_STATUSES] },
@@ -381,7 +383,7 @@ const GROUPS: [RegExp, string[]][] = [
   ],
 ];
 // A question about what's there ("what did I write", "is it done") only reads.
-const PURE_QUESTION = /^(?:what|when|where|who|whom|whose|why|how|which|did|do|does|was|were|is|are|am|have|has|had)\b[^]*\?\s*$/i;
+const PURE_QUESTION = /^(?:(?:so|ok(?:ay)?|hey|hi|and|but|well|also|please|tell me)[,\s]+)*(?:what|when|where|who|whom|whose|why|how|which|did|do|does|was|were|is|are|am|have|has|had)\b[^]*\?\s*$/i;
 const READ_ONLY = ["search_pages", "offer_choices", "open_page"];
 // "How was my week?", "give me a breakdown", "how productive was I": a breakdown only reads, so a question gets it too.
 const BREAKDOWN =
@@ -415,6 +417,23 @@ export function toolsFor(said: string, { every = false, screen = false, logs = f
 async function findThread(ctx: EngineCtx, name: string): Promise<IThread | null> {
   const all = await Thread.find({ userId: ctx.userId, archived: false }).sort({ lastTouchedAt: -1 }).limit(100).lean<IThread[]>();
   return closest(all, name, (t) => t.title);
+}
+
+// "Yes", "that one", "log it": what points back at the exchange before.
+const POINTS_BACK = /\b(?:it|that|this|those|them|yes|yeah|yep|ok(?:ay)?|sure|please|same|again)\b/i;
+
+/**
+ * A thread their message has nothing to do with, which a model will still bring up when it's the
+ * only one it knows ("I need to win ISUCON tomorrow": "log your sleep?"). Loose on purpose: any
+ * word starting the same counts ("slept" for Sleep), since this only stops an offer.
+ */
+async function strayThread(turn: Turn, tool: string, args: Args): Promise<string | null> {
+  if (turn.before === null || (tool !== "log_thread" && tool !== "update_thread")) return null;
+  const t = await findThread(turn.ctx, str(args.thread) ?? "");
+  if (!t) return null;
+  const words = keywords(POINTS_BACK.test(turn.said) ? `${turn.said} ${turn.before}` : turn.said);
+  const names = [t.title, ...(t.fields ?? []).map((f) => f.label)].flatMap(keywords);
+  return names.some((n) => words.some((w) => w.slice(0, 3) === n.slice(0, 3))) ? null : t.title;
 }
 
 /** A due date from the model, or undefined when it isn't one (so a bad date never clears a good one). */
@@ -498,20 +517,28 @@ const threadHref = (t: Pick<IThread, "_id">) => `/threads?t=${String(t._id)}`;
 const titleOf = (v: unknown) => capFirst((str(v) ?? "").replace(/\s+/g, " ")).slice(0, 60);
 /** The kind of thread their words name: "track a new habit". */
 const kindSaid = (said: string) => THREAD_KINDS.find((k) => k !== "other" && new RegExp(`\\b${k}s?\\b`, "i").test(said));
+// Models send an empty `track` when they mean no opinion, not "track nothing".
+const saysNothing = (track: unknown) => track === undefined || (Array.isArray(track) && !track.length);
 
 async function createThreadTool(turn: Turn, args: Args): Promise<string> {
   const { ctx } = turn;
   const title = titleOf(args.title);
   if (!title) throw new Unable("A thread needs a title.");
   const existing = await findThread(ctx, title);
-  if (existing && threadKey(existing.title) === threadKey(title)) return updateThread(turn, { ...args, thread: existing.title });
+  if (existing && threadKey(existing.title) === threadKey(title)) {
+    // Models fill every argument: a blank here means nothing to say, not "clear it".
+    const fresh = (k: string, v: unknown) => (k === "status" ? v !== existing.status : k === "track" ? parseTrack(v).some((s) => !existing.fields?.some((f) => f.key === fieldKey(s.label))) : Boolean(v));
+    const news = Object.entries(args).filter(([k, v]) => ["status", "next_step", "note", "due", "track"].includes(k) && fresh(k, v));
+    if (!news.length) throw new Unable(`Already keeping track of ${existing.title}.`, "If their message is about something else, deal with that instead.");
+    return updateThread(turn, { ...Object.fromEntries(news), thread: existing.title });
+  }
 
   // No kind given (or a form left it): the one they named, else a guess from the title.
   const kind: ThreadKind = THREAD_KINDS.find((k) => k === args.kind && k !== "other") ?? kindSaid(turn.said) ?? guessKind(title);
   const wanted = THREAD_STATUSES.find((s) => s === args.status);
   const dueAt = dueFrom(str(args.due), ctx) ?? null;
   // What it keeps a number on: what Maru or the form said, else a guess from the title.
-  const fields = args.track === undefined ? guessFields(title, kind) : parseTrack(args.track);
+  const fields = saysNothing(args.track) ? guessFields(title, kind) : parseTrack(args.track);
   const created = await createThread(
     ctx,
     {
@@ -554,6 +581,9 @@ async function createThreadTool(turn: Turn, args: Args): Promise<string> {
     created.fields.length ? `tracks ${created.fields.map((f) => f.label.toLowerCase()).join(", ")}` : "",
   ].filter(Boolean);
   receipt(turn, "thread", `Tracking ${created.title}`, detail.join(" · "), threadHref(created), created.hue);
+  // "Walked 30 min" starts it and logs it. Left undone, a model goes back to it on later messages.
+  const values = valuesIn(turn.said, created.fields);
+  if (Object.keys(values).length) await logThread(turn, { thread: created.title, values });
   return `Now keeping track of "${created.title}" (${kind}${created.fields.length ? `; it tracks ${created.fields.map((f) => f.label).join(", ")}` : ""}).`;
 }
 
@@ -570,6 +600,8 @@ async function logThread(turn: Turn, args: Args): Promise<string> {
   const { ctx } = turn;
   const t = await findThread(ctx, str(args.thread) ?? "");
   if (!t) throw new Unable(`No thread called “${str(args.thread) ?? ""}”.`, "Use create_thread if it's new.");
+  // Starting a thread already logged what they said: the model logging it too adds nothing.
+  if (args.add !== true && turn.done.some((d) => d.text === `Logged ${t.title}`)) return "Already logged.";
   const given = args.values && typeof args.values === "object" ? Object.entries(args.values as Args) : [];
   const asked = str(args.day);
   const day = asked && /^\d{4}-\d{2}-\d{2}$/.test(asked) && dayDiff(ctx.day, asked) >= 0 && dayDiff(ctx.day, asked) <= 30 ? asked : ctx.day;
@@ -1310,7 +1342,7 @@ async function formFor(turn: Turn, tool: string, args: Args): Promise<Form | nul
       const kind = THREAD_KINDS.find((k) => k === args.kind && k !== "other");
       const title = titleOf(args.title);
       const word = KIND_WORD[kind ?? "other"];
-      const track = args.track === undefined ? (title ? guessFields(title, kind) : []) : parseTrack(args.track);
+      const track = saysNothing(args.track) ? (title ? guessFields(title, kind) : []) : parseTrack(args.track);
       const inputs = [
         input("title", kind ? capFirst(word) : "What is it?", "text", {
           value: title,
@@ -1407,7 +1439,9 @@ const DECLINES = /^(?:no(?:\s+thanks)?|not now|nothing(?: for now)?|do nothing(?
 async function offerChoices(turn: Turn, args: Args): Promise<string> {
   const offered = Array.isArray(args.choices) ? (args.choices as unknown[]).slice(0, 4) : [];
   const tracked: string[] = [];
+  const strays: string[] = [];
   let here = false;
+  let needs: string | undefined;
   for (const raw of offered) {
     if (!raw || typeof raw !== "object") continue;
     const c = raw as { label?: unknown; do?: { tool?: unknown; args?: unknown } };
@@ -1438,8 +1472,14 @@ async function offerChoices(turn: Turn, args: Args): Promise<string> {
       tracked.push(titleOf(toolArgs.title));
       continue;
     }
+    const stray = await strayThread(turn, tool, toolArgs);
+    if (stray) {
+      strays.push(stray);
+      continue;
+    }
     // What it needs that the model didn't know becomes a form on the choice; the rest can be changed in it.
     const form = await formFor(turn, tool, toolArgs);
+    if (form && !complete(form.inputs)) needs ??= form.ask;
     turn.choices.push({
       label,
       detail: detailOf(tool, toolArgs, label),
@@ -1453,7 +1493,8 @@ async function offerChoices(turn: Turn, args: Args): Promise<string> {
     });
   }
   turn.replies = (turn.choices.length ? turn.replies.filter((r) => !DECLINES.test(r)) : turn.replies).slice(0, 3);
-  const ask = str(args.ask);
+  // Anything but a question reads like a button label ("Create a new habit"): a form's own question replaces it.
+  const ask = str(args.ask)?.endsWith("?") ? str(args.ask) : needs;
   if (ask && (turn.choices.length || turn.replies.length)) turn.ask = ask.slice(0, 200);
   // Offering to draft replies, with the post right there, is a step they shouldn't have to take.
   const offersDrafts = turn.screen.length > 0 && turn.replies.some((r) => DRAFTS.test(r));
@@ -1464,6 +1505,7 @@ async function offerChoices(turn: Turn, args: Args): Promise<string> {
     const why = [
       tracked.length ? `They already track ${tracked.join(", ")}: offer something new, or a form without a title.` : "",
       here ? "They're already on that page: what they mean is on their screen, so answer about it or act on it." : "",
+      strays.length ? `Their message isn't about ${strays.join(" or ")}: deal with what they said. Something new is a create_thread.` : "",
       offersDrafts ? "Don't offer to draft replies: call draft_replies for that post now." : "",
     ];
     throw new Unable("Nothing to offer.", why.filter(Boolean).join(" "));
@@ -1587,6 +1629,9 @@ export async function runTool(turn: Turn, call: ChatCompletionMessageToolCall): 
     return { out: "Those arguments weren't valid JSON.", ok: false };
   }
   try {
+    // A model finishing its last job: logging on a thread they didn't mention, with no number in what they said.
+    const stray = name === "log_thread" && (!/\d/.test(turn.said) || !Object.keys((args.values as Args) ?? {}).length) ? await strayThread(turn, name, args) : null;
+    if (stray) throw new Unable("Nothing to log.", `Their message isn't about ${stray}: deal with what they said.`);
     // Missing something it needs: they get a form for it instead of a question.
     if (CHOOSABLE.includes(name) && (await askWithForm(turn, name, args))) {
       return { out: "They have a form to fill in for that. Don't ask for it in words.", ok: true };

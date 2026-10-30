@@ -119,6 +119,16 @@ export function specLabel(text: string): string {
 
 const amount = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
 
+/** What a sentence gives for the numbers a thread keeps: "walked 30 min" is Minutes 30. */
+export function valuesIn(said: string, fields: Pick<FieldSpec, "label" | "unit" | "type">[]): Record<string, number> {
+  const found = fields.flatMap((f): [string, number][] => {
+    const names = [f.unit, f.label.replace(/s$/i, "")].filter(Boolean).map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+    const m = f.type === "number" && names ? said.match(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(?:${names})s?\\b`, "i")) : null;
+    return m ? [[f.label, Number(m[1])]] : [];
+  });
+  return Object.fromEntries(found);
+}
+
 /** A value as it reads: "30 min", "6 glasses", "Olive Garden". */
 export function valueText(f: Pick<FieldSpec, "label" | "unit" | "type">, value: number | string | null | undefined): string {
   if (value === null || value === undefined || value === "") return "";
