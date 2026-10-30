@@ -22,6 +22,12 @@ export const limiters = {
   forgotPassword: make(5, "1 h"),
   resetPassword: make(10, "1 h"),
   general: make(120, "1 m"),
+  moment: make(30, "1 h"),
+  reply: make(60, "1 h"),
+  message: make(120, "1 h"),
+  follow: make(120, "1 h"),
+  reaction: make(300, "1 h"),
+  breakdown: make(40, "1 h"),
 };
 
 export async function checkLimit(

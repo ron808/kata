@@ -15,8 +15,38 @@ export interface IUser {
   lastEntryDate: Date | null;
   lastWeeklyDigest: Date | null;
   lastMonthlyDigest: Date | null;
+  /** Public @name. Null until the writer claims one. */
+  handle: string | null;
+  bio: string;
+  /** Listed in Discover, and public moments can appear there. Pages are never public. */
+  isPublic: boolean;
+  /** Topics the writer cares about; they steer Kata's questions. */
+  interests: string[];
+  checkIn: CheckIn;
+  onboardedAt: Date | null;
+  followerCount: number;
+  followingCount: number;
+  /** Index into the person palette (0–7) for their seal. */
+  hue: number;
+  /** Lasting facts Kata keeps about the writer, newest last. They can see and delete each one. */
+  memories: IMemory[];
+  /** What the writer calls their companion. Empty means the default, Maru. */
+  companionName: string;
+  /** What the companion calls the writer. Empty means their first name. */
+  nickname: string;
+  /** The hue the companion wears (1–7), or null for vermilion. */
+  companionHue: number | null;
   createdAt: Date;
 }
+
+export interface IMemory {
+  _id: mongoose.Types.ObjectId;
+  text: string;
+  at: Date;
+}
+
+export const CHECK_INS = ["morning", "evening", "both"] as const;
+export type CheckIn = (typeof CHECK_INS)[number];
 
 const UserSchema = new Schema<IUser>(
   {
@@ -44,10 +74,38 @@ const UserSchema = new Schema<IUser>(
     lastEntryDate: { type: Date, default: null },
     lastWeeklyDigest: { type: Date, default: null },
     lastMonthlyDigest: { type: Date, default: null },
+    handle: { type: String, default: null, lowercase: true, trim: true },
+    bio: { type: String, default: "", maxlength: 160 },
+    isPublic: { type: Boolean, default: false },
+    interests: [{ type: String }],
+    checkIn: { type: String, enum: CHECK_INS, default: "morning" },
+    onboardedAt: { type: Date, default: null },
+    followerCount: { type: Number, default: 0 },
+    followingCount: { type: Number, default: 0 },
+    hue: { type: Number, default: () => Math.floor(Math.random() * 8) },
+    memories: {
+      type: [
+        new Schema<IMemory>({
+          text: { type: String, required: true, trim: true, maxlength: 200 },
+          at: { type: Date, default: Date.now },
+        }),
+      ],
+      default: [],
+    },
+    companionName: { type: String, default: "", trim: true, maxlength: 20 },
+    nickname: { type: String, default: "", trim: true, maxlength: 30 },
+    companionHue: { type: Number, default: null, min: 1, max: 7 },
     createdAt: { type: Date, default: Date.now },
   },
   { timestamps: false }
 );
+
+// Same pattern as Template.publishedSlug: only real strings take part in uniqueness.
+UserSchema.index(
+  { handle: 1 },
+  { unique: true, partialFilterExpression: { handle: { $type: "string" } } }
+);
+UserSchema.index({ isPublic: 1, followerCount: -1 });
 
 export const User: Model<IUser> =
   mongoose.models.User ?? mongoose.model<IUser>("User", UserSchema);

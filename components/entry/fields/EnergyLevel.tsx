@@ -1,9 +1,13 @@
 "use client";
 
-import { motion } from "framer-motion";
 import type { TemplateField } from "@/lib/types";
+import { ENERGY_LABELS, EnergyBars } from "./meters";
+import { radioKeys, tabStop } from "./radio";
+
+const STEPS = [1, 2, 3, 4, 5] as const;
 
 export function EnergyLevel({
+  field,
   value,
   onChange,
   readOnly,
@@ -13,36 +17,38 @@ export function EnergyLevel({
   onChange: (v: number) => void;
   readOnly?: boolean;
 }) {
+  if (readOnly) {
+    if (!value) return <p className="text-[0.9375rem] text-ink/65">Not set</p>;
+    return (
+      <p className="inline-flex items-center gap-3">
+        <EnergyBars value={value} height={18} className="[&>span]:w-[5px]" />
+        <span className="font-display text-display-s">{ENERGY_LABELS[value - 1]}</span>
+        <span className="sr-only">, energy {value} of 5</span>
+      </p>
+    );
+  }
+
   return (
-    <div className="flex items-center gap-1.5">
-      {[1, 2, 3, 4, 5].map((level) => {
-        const filled = (value ?? 0) >= level;
-        return (
-          <motion.button
-            key={level}
-            type="button"
-            disabled={readOnly}
-            onClick={() => onChange(level)}
-            whileTap={{ scale: 0.9 }}
-            className="grid place-items-center w-10 h-10 rounded-lg transition-colors"
-            aria-label={`Energy ${level}`}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              className={`w-6 h-6 transition-colors ${
-                filled ? "text-accent" : "text-text-muted"
-              }`}
-              fill={filled ? "currentColor" : "none"}
-              stroke="currentColor"
-              strokeWidth={1.5}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" />
-            </svg>
-          </motion.button>
-        );
-      })}
+    <div
+      role="radiogroup"
+      aria-label={field.label}
+      onKeyDown={radioKeys(STEPS, value as (typeof STEPS)[number] | null, onChange)}
+      className="scale w-full max-w-[30rem]"
+    >
+      {STEPS.map((n, i) => (
+        <button
+          key={n}
+          type="button"
+          role="radio"
+          aria-checked={value === n}
+          tabIndex={tabStop(value === n, i, value != null)}
+          onClick={() => onChange(n)}
+          className="scale-step focus-visible:-outline-offset-4"
+        >
+          <EnergyBars value={n} />
+          {ENERGY_LABELS[i]}
+        </button>
+      ))}
     </div>
   );
 }

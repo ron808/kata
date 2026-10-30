@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/shared/Button";
+import { Icon } from "@/components/shared/Icon";
+import { FormAlert } from "@/components/shared/TextField";
+import { PasswordField } from "./PasswordField";
 
 export function ResetForm({ token }: { token: string }) {
   const router = useRouter();
@@ -12,20 +15,27 @@ export function ResetForm({ token }: { token: string }) {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fieldError, setFieldError] = useState<{
-    password?: string;
-    confirm?: string;
-  }>({});
+  const [fieldError, setFieldError] = useState<{ password?: string; confirm?: string }>({});
+
+  // Once it's saved, carry on to log in after a moment.
+  useEffect(() => {
+    if (!done) return;
+    const t = window.setTimeout(() => router.push("/login"), 2200);
+    return () => window.clearTimeout(t);
+  }, [done, router]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (loading) return;
     const errs: typeof fieldError = {};
     if (password.length < 8) errs.password = "Use at least 8 characters.";
-    if (password !== confirm) errs.confirm = "Passwords don't match.";
+    else if (password !== confirm) errs.confirm = "These don’t match yet.";
     setFieldError(errs);
     setError(null);
-    if (Object.keys(errs).length > 0) return;
+    if (Object.keys(errs).length > 0) {
+      document.getElementById(errs.password ? "reset-password" : "reset-confirm")?.focus();
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/auth/reset", {
@@ -35,12 +45,11 @@ export function ResetForm({ token }: { token: string }) {
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? "Reset failed");
+        throw new Error(data.error ?? "Couldn’t update your password. Ask for a new link and try again.");
       }
       setDone(true);
-      setTimeout(() => router.push("/login"), 1800);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(err instanceof Error ? err.message : "Something went wrong. Try again in a moment.");
     } finally {
       setLoading(false);
     }
@@ -48,93 +57,54 @@ export function ResetForm({ token }: { token: string }) {
 
   if (done) {
     return (
-      <div
-        role="status"
-        aria-live="polite"
-        className="border border-success/40 bg-success/10 px-4 py-4 text-[15px] leading-[1.65]"
-      >
-        <p className="text-success font-medium">Password updated.</p>
-        <p className="text-text-secondary mt-2">
-          Redirecting to sign-in…{" "}
-          <Link href="/login" className="text-accent hover:text-accent-hover">
-            Go now →
-          </Link>
-        </p>
+      <div role="status" className="text-center">
+        <span className="mx-auto grid h-16 w-16 rotate-[-6deg] place-items-center rounded-full border-2 border-edge bg-sun text-on-sun shadow-sticker-sm">
+          <Icon name="check" className="h-7 w-7" strokeWidth={2.2} />
+        </span>
+        <p className="mt-5 font-display text-display-s">Password updated.</p>
+        <p className="mt-3 text-ink/75">Taking you to log in.</p>
+        <Link href="/login" className="link mt-2 inline-flex min-h-11 items-center font-semibold">
+          Go now
+        </Link>
       </div>
     );
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4" noValidate>
-      {error && (
-        <div
-          role="alert"
-          aria-live="polite"
-          className="border border-danger/40 bg-danger/10 text-danger text-sm px-3.5 py-2.5"
-        >
-          {error}
-        </div>
-      )}
-      <div>
-        <label
-          htmlFor="reset-password"
-          className="block text-[10.5px] uppercase tracking-[0.22em] text-text-muted font-mono mb-2"
-        >
-          New password
-        </label>
-        <input
-          id="reset-password"
-          type="password"
-          autoComplete="new-password"
-          required
-          minLength={8}
-          aria-invalid={Boolean(fieldError.password)}
-          aria-describedby={fieldError.password ? "reset-password-err" : undefined}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full bg-transparent border-b border-border-strong px-0 py-2.5 text-[16px] font-serif text-text-primary focus:border-accent transition-colors"
-        />
-        {fieldError.password && (
-          <span
-            id="reset-password-err"
-            role="alert"
-            className="block text-xs text-danger mt-1.5"
-          >
-            {fieldError.password}
-          </span>
-        )}
-      </div>
-      <div>
-        <label
-          htmlFor="reset-confirm"
-          className="block text-[10.5px] uppercase tracking-[0.22em] text-text-muted font-mono mb-2"
-        >
-          Confirm password
-        </label>
-        <input
-          id="reset-confirm"
-          type="password"
-          autoComplete="new-password"
-          required
-          minLength={8}
-          aria-invalid={Boolean(fieldError.confirm)}
-          aria-describedby={fieldError.confirm ? "reset-confirm-err" : undefined}
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          className="w-full bg-transparent border-b border-border-strong px-0 py-2.5 text-[16px] font-serif text-text-primary focus:border-accent transition-colors"
-        />
-        {fieldError.confirm && (
-          <span
-            id="reset-confirm-err"
-            role="alert"
-            className="block text-xs text-danger mt-1.5"
-          >
-            {fieldError.confirm}
-          </span>
-        )}
-      </div>
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? "Saving…" : "Update password"}
+    <form onSubmit={onSubmit} className="space-y-5" noValidate>
+      {error ? (
+        <FormAlert>
+          {error}{" "}
+          <Link href="/forgot" className="link font-semibold">
+            Get a new link
+          </Link>
+        </FormAlert>
+      ) : null}
+      <PasswordField
+        id="reset-password"
+        label="New password"
+        autoComplete="new-password"
+        required
+        minLength={8}
+        maxLength={120}
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        error={fieldError.password}
+        hint="At least 8 characters."
+      />
+      <PasswordField
+        id="reset-confirm"
+        label="Type it again"
+        autoComplete="new-password"
+        required
+        minLength={8}
+        maxLength={120}
+        value={confirm}
+        onChange={(e) => setConfirm(e.target.value)}
+        error={fieldError.confirm}
+      />
+      <Button type="submit" size="lg" className="w-full" disabled={loading}>
+        {loading ? "Saving…" : "Save new password"}
       </Button>
     </form>
   );

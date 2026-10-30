@@ -1,44 +1,42 @@
-"use client";
+import type { ComponentProps } from "react";
 
-import { motion, type HTMLMotionProps } from "framer-motion";
-import { forwardRef } from "react";
+export type ButtonVariant = "primary" | "secondary" | "quiet" | "danger";
+export type ButtonSize = "sm" | "md" | "lg";
 
-type ButtonProps = {
-  variant?: "primary" | "secondary" | "ghost" | "danger";
-  size?: "sm" | "md" | "lg";
-} & HTMLMotionProps<"button">;
+// Stickers press: hover lifts toward the light, active pushes into the shadow (.press).
+const BASE =
+  "inline-flex items-center justify-center gap-2 rounded-full font-semibold whitespace-nowrap select-none " +
+  "transition-[background-color,color,transform,box-shadow] duration-300 ease-out " +
+  "disabled:opacity-50 disabled:pointer-events-none";
 
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = "primary", size = "md", className = "", children, ...rest },
-  ref
-) {
-  const base =
-    "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
-  const sizes = {
-    sm: "px-3.5 py-1.5 text-sm",
-    md: "px-5 py-2.5 text-sm",
-    lg: "px-6 py-3.5 text-base",
-  };
-  const variants = {
-    primary:
-      "bg-accent text-bg-base hover:bg-accent-hover btn-glow",
-    secondary:
-      "border border-border-strong text-text-primary hover:border-accent hover:text-accent",
-    ghost:
-      "text-text-secondary hover:text-accent",
-    danger:
-      "border border-danger/50 text-danger hover:bg-danger/10",
-  };
+const SIZES: Record<ButtonSize, string> = {
+  sm: "h-9 px-3.5 text-sm",
+  md: "h-11 px-5 text-[0.9375rem]",
+  lg: "h-13 px-6 text-base",
+};
 
-  return (
-    <motion.button
-      ref={ref}
-      whileTap={{ scale: 0.97 }}
-      transition={{ duration: 0.12 }}
-      className={`${base} ${sizes[size]} ${variants[variant]} ${className}`}
-      {...rest}
-    >
-      {children}
-    </motion.button>
-  );
-});
+const VARIANTS: Record<ButtonVariant, string> = {
+  primary: "press border-2 border-edge bg-accent text-on-accent",
+  secondary: "press border-2 border-edge bg-surface text-ink",
+  quiet: "text-ink/75 hover:bg-ink/[0.06] hover:text-ink",
+  danger: "press border-2 border-edge bg-surface text-bad",
+};
+
+/** Class names for anything that should look like a button (links included). */
+export function buttonClass({
+  variant = "primary",
+  size = "md",
+  className = "",
+}: { variant?: ButtonVariant; size?: ButtonSize; className?: string } = {}) {
+  return `${BASE} ${SIZES[size]} ${VARIANTS[variant]} ${className}`;
+}
+
+export function Button({
+  variant = "primary",
+  size = "md",
+  className = "",
+  type = "button",
+  ...rest
+}: ComponentProps<"button"> & { variant?: ButtonVariant; size?: ButtonSize }) {
+  return <button type={type} className={buttonClass({ variant, size, className })} {...rest} />;
+}

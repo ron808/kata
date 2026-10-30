@@ -4,6 +4,19 @@ import { Template } from "@/lib/db/models/Template";
 import { User } from "@/lib/db/models/User";
 import { TemplateUpsertSchema } from "@/lib/validation/schemas";
 import { handleError, jsonError, requireUser } from "@/lib/api";
+import { myPages } from "@/lib/templates/mine";
+
+/** The writer's own pages, today's first. */
+export async function GET() {
+  try {
+    const { session, response } = await requireUser();
+    if (response) return response;
+    await connectDB();
+    return NextResponse.json({ pages: await myPages(session.user.id) });
+  } catch (err) {
+    return handleError(err);
+  }
+}
 
 export async function POST(request: Request) {
   try {

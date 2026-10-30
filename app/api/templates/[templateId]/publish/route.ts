@@ -13,8 +13,12 @@ function slugify(name: string): string {
     .slice(0, 40);
 }
 
+/**
+ * Puts the page in the gallery, or takes it out. With `{ credit }` it only changes whether
+ * the gallery shows who made it (off unless they choose it).
+ */
 export async function POST(
-  _request: Request,
+  request: Request,
   ctx: { params: Promise<{ templateId: string }> }
 ) {
   try {
@@ -28,6 +32,13 @@ export async function POST(
       userId: session.user.id,
     });
     if (!template) return jsonError("Not found", 404);
+
+    const body = (await request.json().catch(() => null)) as { credit?: unknown } | null;
+    if (typeof body?.credit === "boolean") {
+      template.credit = body.credit;
+      await template.save();
+      return NextResponse.json({ isPublished: template.isPublished, credit: template.credit });
+    }
 
     if (template.isPublished) {
       template.isPublished = false;

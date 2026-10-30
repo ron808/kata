@@ -2,122 +2,156 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { motion, AnimatePresence } from "framer-motion";
-import { useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useEffect, useState } from "react";
+import { Icon } from "@/components/shared/Icon";
 import type { TemplateField } from "@/lib/types";
 import { FIELD_TYPE_META } from "./fieldTypes";
 import { FieldConfig } from "./FieldConfig";
 
+/** One field of the page, as a sticker you can pick up (handle), open (config) and peel off (two presses). */
 export function FieldCard({
   field,
+  open,
+  folded = false,
+  error,
+  fresh,
+  onToggle,
   onChange,
   onRemove,
+  onPickUp,
+  onRelease,
 }: {
   field: TemplateField;
+  /** Expanded to show its settings. */
+  open: boolean;
+  /** Folded at once, no animation: a field is being carried and the list must measure true. */
+  folded?: boolean;
+  error?: string;
+  /** Just added: arrives with a small appear. */
+  fresh?: boolean;
+  onToggle: () => void;
   onChange: (next: TemplateField) => void;
   onRemove: () => void;
+  /** The handle was grabbed: fold open fields before the drag measures the list. */
+  onPickUp: () => void;
+  /** The handle was let go without a drag starting. */
+  onRelease: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: field.id });
-  const [open, setOpen] = useState(false);
-  const [holdProgress, setHoldProgress] = useState(0);
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: field.id });
+  const reduce = useReducedMotion();
+  // Deleting takes two presses: the first arms it, the second confirms. Works for touch and keys.
+  const [armed, setArmed] = useState(false);
   const meta = FIELD_TYPE_META[field.type];
+  const isDivider = field.type === "divider";
+  const title = isDivider ? (field.config?.sectionLabel as string) || "Section break" : field.label.trim() || "Untitled question";
 
-  const holdTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  function startHold() {
-    setHoldProgress(0);
-    const start = Date.now();
-    if (holdTimer.current) clearInterval(holdTimer.current);
-    holdTimer.current = setInterval(() => {
-      const p = Math.min(1, (Date.now() - start) / 400);
-      setHoldProgress(p);
-      if (p >= 1) {
-        if (holdTimer.current) clearInterval(holdTimer.current);
-        holdTimer.current = null;
-        onRemove();
-      }
-    }, 16);
-  }
-  function endHold() {
-    if (holdTimer.current) clearInterval(holdTimer.current);
-    holdTimer.current = null;
-    setHoldProgress(0);
-  }
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 3000);
+    return () => clearTimeout(t);
+  }, [armed]);
 
   const style = {
-    transform: CSS.Transform.toString(transform),
+    // Picked up, a sticker tilts a little and casts a longer shadow.
+    transform: [CSS.Transform.toString(transform), isDragging ? "rotate(-1.2deg)" : ""].filter(Boolean).join(" ") || undefined,
     transition,
-    opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 50 : 1,
-    boxShadow: isDragging ? "0 12px 32px -8px rgba(0,0,0,0.6)" : undefined,
-    scale: isDragging ? 1.02 : 1,
+    zIndex: isDragging ? 20 : undefined,
   };
 
   return (
-    <motion.div
+    <li
       ref={setNodeRef}
       style={style}
-      layout
-      className={`rounded-xl border bg-bg-surface transition-colors ${
-        open ? "border-accent" : "border-border hover:border-border-strong"
-      }`}
+      data-hue={meta.hue ?? undefined}
+      className={`relative rounded-lg border-2 bg-surface transition-shadow duration-300 ${fresh ? "appear" : ""} ${
+        error ? "border-bad shadow-[3px_3px_0_var(--bad)]" : "border-edge"
+      } ${isDragging ? "shadow-sticker" : error ? "" : "shadow-sticker-sm"}`}
     >
-      <div className="flex items-center gap-3 px-4 py-3">
+      <div className="flex items-center gap-1 p-1.5">
         <button
+          type="button"
           {...attributes}
           {...listeners}
-          className="cursor-grab active:cursor-grabbing text-text-muted hover:text-text-primary p-1"
-          aria-label="Drag to reorder"
+          onPointerDown={(e) => {
+            onPickUp();
+            listeners?.onPointerDown?.(e);
+          }}
+          onPointerUp={onRelease}
+          onKeyDown={(e) => {
+            if (!isDragging && (e.code === "Space" || e.code === "Enter")) onPickUp();
+            listeners?.onKeyDown?.(e);
+          }}
+          className="grid h-11 w-11 shrink-0 cursor-grab touch-none place-items-center rounded-full text-ink/55 transition-colors hover:bg-ink/[0.06] hover:text-ink active:cursor-grabbing"
+          aria-label={`Move ${title}`}
         >
-          ⋮⋮
+          <Icon name="drag" strokeWidth={2.8} className="h-5 w-5" />
         </button>
-        <span className="grid place-items-center w-8 h-8 rounded-md bg-bg-elevated text-accent font-mono text-sm shrink-0">
-          {meta.icon}
-        </span>
         <button
-          onClick={() => setOpen((o) => !o)}
-          className="flex-1 min-w-0 text-left"
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-md px-1 py-1 text-left xs:gap-3"
         >
-          <span className="block text-sm text-text-primary truncate">
-            {field.label}
-            {field.required && <span className="text-text-muted ml-1">*</span>}
+          <span
+            aria-hidden
+            className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 border-edge xs:h-9 xs:w-9 ${
+              isDivider ? "bg-raised text-ink" : "bg-hue text-on-hue"
+            }`}
+          >
+            <Icon name={meta.icon} className="h-[1.05rem] w-[1.05rem]" strokeWidth={2} />
           </span>
-          <span className="block text-xs text-text-muted">{meta.label}</span>
+          <span className="min-w-0 flex-1">
+            <span className={`line-clamp-2 text-[1.0625rem] font-semibold leading-snug [overflow-wrap:anywhere] ${field.label.trim() || isDivider ? "" : "text-ink/65"}`}>
+              {title}
+              {field.required ? (
+                <span className="ml-1 align-top text-xs text-accent" aria-hidden>
+                  ●
+                </span>
+              ) : null}
+            </span>
+            <span className="block truncate text-sm text-ink/65">
+              {meta.label}
+              {field.required ? " · Required" : ""}
+              {error ? <span className="font-semibold text-bad"> · {error}</span> : null}
+            </span>
+          </span>
+          <Icon
+            name="arrow-down"
+            className={`h-4 w-4 shrink-0 text-ink/55 transition-transform duration-300 max-xs:hidden ${open ? "rotate-180" : ""}`}
+          />
         </button>
         <button
-          onMouseDown={startHold}
-          onMouseUp={endHold}
-          onMouseLeave={endHold}
-          onTouchStart={startHold}
-          onTouchEnd={endHold}
-          className="relative grid place-items-center w-8 h-8 rounded-md text-text-muted hover:text-danger hover:bg-danger/10 transition-colors overflow-hidden"
-          aria-label="Hold to delete"
-          title="Hold to delete"
+          type="button"
+          onClick={() => (armed ? onRemove() : setArmed(true))}
+          aria-label={armed ? `Confirm removing ${title}` : `Remove ${title}`}
+          className={`flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-full text-sm font-semibold transition-colors duration-300 ${
+            armed
+              ? "border-2 border-edge bg-bad px-3 text-surface"
+              : "w-11 text-ink/55 hover:bg-ink/[0.06] hover:text-bad"
+          }`}
         >
-          ✕
-          {holdProgress > 0 && (
-            <span
-              className="absolute inset-0 bg-danger/30 origin-bottom"
-              style={{ transform: `scaleY(${holdProgress})` }}
-            />
-          )}
+          <Icon name="trash" className="h-[1.1rem] w-[1.1rem]" />
+          {armed ? <span>Remove?</span> : null}
         </button>
       </div>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: "easeInOut" }}
-            className="overflow-hidden"
-          >
-            <div className="border-t border-border px-4 py-4">
-              <FieldConfig field={field} onChange={onChange} />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
+      {folded ? null : (
+        <AnimatePresence initial={false}>
+          {open && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: reduce ? 0 : 0.35, ease: [0.22, 1, 0.36, 1] }}
+              className="overflow-clip"
+            >
+              <div className="well mx-1.5 mb-1.5 p-4 sm:p-5">
+                <FieldConfig field={field} onChange={onChange} error={error} />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      )}
+    </li>
   );
 }

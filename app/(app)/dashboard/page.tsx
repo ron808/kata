@@ -1,203 +1,231 @@
 import Link from "next/link";
 import { auth } from "@/lib/auth/authOptions";
 import { connectDB } from "@/lib/db/mongoose";
-import { Entry } from "@/lib/db/models/Entry";
 import { Digest } from "@/lib/db/models/Digest";
+import { Entry } from "@/lib/db/models/Entry";
 import { User } from "@/lib/db/models/User";
-import { todayUtcMidnight, isoDay } from "@/lib/utils/dates";
-import { streakFromDates } from "@/lib/utils/streaks";
-import { ContributionGraph } from "@/components/dashboard/ContributionGraph";
-import { StatsBar } from "@/components/dashboard/StatsBar";
-import { DigestCard } from "@/components/dashboard/DigestCard";
-import { QuickEntry } from "@/components/dashboard/QuickEntry";
-import { RecentEntries } from "@/components/dashboard/RecentEntries";
-import type { Entry as EntryT } from "@/lib/types";
+import { isGroqConfigured } from "@/lib/ai/groq";
+import { loadCompanion, type CompanionState } from "@/lib/companion/load";
+import { namesFor } from "@/lib/companion/naming";
+import { localDay, validTimeZone } from "@/lib/companion/time";
+import { loadFeed, loadPeople } from "@/lib/social/load";
+import { workingOn, type WorkingOnT } from "@/lib/social/working";
+import { buildAlmanac } from "@/lib/utils/almanac";
+import { formatDate, hourIn, isoDay, todayUtcMidnight } from "@/lib/utils/dates";
+import { AppPage } from "@/components/shared/AppPage";
+import { buttonClass } from "@/components/shared/Button";
+import { KataMark } from "@/components/shared/Avatar";
+import { AlmanacLegend, YearAlmanac } from "@/components/shared/YearAlmanac";
+import { LetterCard } from "@/components/dashboard/LetterCard";
+import { StatsRow } from "@/components/dashboard/StatsRow";
+import { HomeBoard } from "@/components/home/HomeBoard";
+import { PeopleRow } from "@/components/home/PeopleRow";
+import { PeopleProvider } from "@/components/people/viewer";
+import { TodayQuestions } from "@/components/home/TodayQuestions";
+import { WorkingOn } from "@/components/home/WorkingOn";
+import type { DigestSummary, MomentT, PersonT } from "@/lib/types";
 
-interface LoadedData {
-  contributions: { date: string; wordCount: number }[];
-  todayEntry: EntryT | null;
-  recent: EntryT[];
-  pinnedDigest: {
-    _id: string;
-    type: "weekly" | "monthly";
-    periodStart: string;
-    periodEnd: string;
-    content: string;
-    entryCount: number;
-    wordCount: number;
-    isRead: boolean;
-    createdAt: string;
-  } | null;
-  stats: {
-    streak: number;
-    longestStreak: number;
-    totalEntries: number;
-    totalWords: number;
-    averageWords: number;
-  };
-  hasDb: boolean;
+const CHECK_IN_LINE = {
+  morning: "Checks in every morning",
+  evening: "Checks in every evening",
+  both: "Checks in morning and evening",
+} as const;
+
+interface HomeData {
+  companion: CompanionState;
+  tz: string;
+  today: string;
+  checkIn: keyof typeof CHECK_IN_LINE;
+  handle: string | null;
+  needsSetup: boolean;
+  todayEntryId: string | null;
+  letter: DigestSummary | null;
+  moments: MomentT[];
+  suggested: PersonT[];
+  working: WorkingOnT[];
+  words: Map<string, number>;
+  stats: { streak: number; longestStreak: number; totalEntries: number; totalWords: number; averageWords: number };
 }
 
-async function loadData(userId: string): Promise<LoadedData> {
+async function loadHome(userId: string): Promise<HomeData | null> {
   try {
     await connectDB();
-    const [user, entries, pinned] = await Promise.all([
-      User.findById(userId).lean(),
-      Entry.find({ userId })
-        .select("date wordCount tags fields")
-        .sort({ date: -1 })
-        .limit(366)
-        .lean(),
+    const user = await User.findById(userId).select("name handle timezone checkIn activeTemplateId onboardedAt streak longestStreak totalEntries totalWords").lean();
+    if (!user) return null;
+    const tz = validTimeZone(user.timezone);
+    const [companion, entries, letter, feed, people, working] = await Promise.all([
+      loadCompanion(userId),
+      Entry.find({ userId }).select("date wordCount").sort({ date: -1 }).limit(366).lean(),
       Digest.findOne({ userId, isRead: false }).sort({ createdAt: -1 }).lean(),
+      loadFeed(userId, { scope: "following" }),
+      loadPeople(userId, {}),
+      workingOn(userId),
     ]);
-    const today = todayUtcMidnight();
-    const todayEntry =
-      entries.find((e) => isoDay(e.date) === isoDay(today)) ?? null;
-    const recent = entries.slice(0, 5);
-    const totalEntries = user?.totalEntries ?? entries.length;
-    const totalWords =
-      user?.totalWords ??
-      entries.reduce((acc, e) => acc + (e.wordCount ?? 0), 0);
-    const averageWords =
-      totalEntries === 0 ? 0 : Math.round(totalWords / totalEntries);
-    const streak =
-      user?.streak ??
-      streakFromDates(entries.map((e) => new Date(e.date)));
+    const todayIso = isoDay(todayUtcMidnight());
+    const todayEntry = entries.find((e) => isoDay(e.date) === todayIso);
+    const totalEntries = user.totalEntries ?? entries.length;
+    const totalWords = user.totalWords ?? 0;
     return {
-      contributions: entries.map((e) => ({
-        date: isoDay(e.date),
-        wordCount: e.wordCount ?? 0,
-      })),
-      todayEntry: todayEntry
+      companion,
+      tz,
+      today: localDay(tz),
+      checkIn: user.checkIn ?? "morning",
+      handle: user.handle ?? null,
+      // Accounts from before the companion have a page but have never met Kata.
+      needsSetup: !user.activeTemplateId || !user.onboardedAt,
+      todayEntryId: todayEntry ? String(todayEntry._id) : null,
+      letter: letter
         ? {
-            _id: String(todayEntry._id),
-            date: isoDay(todayEntry.date),
-            wordCount: todayEntry.wordCount ?? 0,
-            tags: todayEntry.tags ?? [],
-            fields: (todayEntry.fields ?? []).map((f) => ({
-              fieldId: f.fieldId,
-              type: f.type as EntryT["fields"][number]["type"],
-              label: f.label,
-              value: f.value as EntryT["fields"][number]["value"],
-            })),
+            _id: String(letter._id),
+            type: letter.type,
+            periodStart: letter.periodStart.toISOString(),
+            periodEnd: letter.periodEnd.toISOString(),
+            content: letter.content,
+            entryCount: letter.entryCount,
+            wordCount: letter.wordCount,
+            isRead: letter.isRead,
+            createdAt: letter.createdAt.toISOString(),
           }
         : null,
-      recent: recent.map((e) => ({
-        _id: String(e._id),
-        date: isoDay(e.date),
-        wordCount: e.wordCount ?? 0,
-        tags: e.tags ?? [],
-        fields: (e.fields ?? []).map((f) => ({
-          fieldId: f.fieldId,
-          type: f.type as EntryT["fields"][number]["type"],
-          label: f.label,
-          value: f.value as EntryT["fields"][number]["value"],
-        })),
-      })),
-      pinnedDigest: pinned
-        ? {
-            _id: String(pinned._id),
-            type: pinned.type,
-            periodStart: pinned.periodStart.toISOString(),
-            periodEnd: pinned.periodEnd.toISOString(),
-            content: pinned.content,
-            entryCount: pinned.entryCount,
-            wordCount: pinned.wordCount,
-            isRead: pinned.isRead,
-            createdAt: pinned.createdAt.toISOString(),
-          }
-        : null,
+      moments: feed.moments.filter((m) => !m.isMine).slice(0, 3),
+      suggested: people.suggested.slice(0, 4),
+      working,
+      words: new Map(entries.map((e) => [isoDay(e.date), e.wordCount ?? 0])),
       stats: {
-        streak,
-        longestStreak: user?.longestStreak ?? streak,
+        streak: user.streak ?? 0,
+        longestStreak: user.longestStreak ?? 0,
         totalEntries,
         totalWords,
-        averageWords,
+        averageWords: totalEntries ? Math.round(totalWords / totalEntries) : 0,
       },
-      hasDb: true,
     };
-  } catch {
-    return {
-      contributions: [],
-      todayEntry: null,
-      recent: [],
-      pinnedDigest: null,
-      stats: {
-        streak: 0,
-        longestStreak: 0,
-        totalEntries: 0,
-        totalWords: 0,
-        averageWords: 0,
-      },
-      hasDb: false,
-    };
+  } catch (err) {
+    console.error("home:load", err);
+    return null;
   }
 }
 
-export default async function DashboardPage() {
+function greeting(hour: number) {
+  if (hour < 5) return "Still up";
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+export default async function HomePage() {
   const session = await auth();
-  const data = await loadData(session!.user.id);
+  // The greeting uses what they asked to be called.
+  const [data, { name, nickname: first }] = await Promise.all([loadHome(session!.user.id), namesFor(session!.user.id)]);
+  const tz = data?.tz ?? "UTC";
+  const now = new Date();
 
   return (
-    <div className="px-6 py-8 max-w-5xl mx-auto space-y-8">
-      <header>
-        <div className="text-xs uppercase tracking-widest text-text-muted font-mono">
-          Hey {session?.user?.name?.split(" ")[0] ?? "there"}
+    <AppPage>
+      <header className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+        <div className="min-w-0">
+          <p className="text-[0.9375rem] font-medium text-ink/70">{formatDate(now, "long", tz)}</p>
+          <h1 className="mt-2 font-display text-display-m">
+            {greeting(hourIn(tz, now))}
+            {first ? (
+              <>
+                , <span className="mark">{first}</span>
+              </>
+            ) : null}
+            .
+          </h1>
         </div>
-        <h1 className="text-3xl font-semibold tracking-tight mt-1">
-          Your Kata
-        </h1>
+        {data && data.stats.streak > 1 ? (
+          <p
+            className="grid h-24 w-24 shrink-0 rotate-6 place-items-center content-center rounded-full border-2 border-edge bg-sun text-center text-on-sun shadow-sticker-sm max-sm:hidden"
+            aria-label={`${data.stats.streak}-day streak`}
+          >
+            <span className="font-display text-[2.1rem] leading-none tabular-nums">{data.stats.streak}</span>
+            <span className="text-[0.75rem] font-semibold leading-tight">day streak</span>
+          </p>
+        ) : null}
       </header>
 
-      {!data.hasDb && (
-        <div className="rounded-xl border border-warning/40 bg-warning/5 px-4 py-3 text-sm text-warning">
-          Database not configured. Add{" "}
-          <code className="font-mono text-xs">MONGODB_URI</code> to your{" "}
-          <code className="font-mono text-xs">.env.local</code> to start saving
-          entries.
-        </div>
+      {!data ? (
+        <p role="alert" data-hue="0" className="mt-8 rounded-md border-2 border-edge bg-tint px-4 py-3 text-[0.9375rem] font-medium text-deep">
+          Kata can’t reach the database. Add <code className="font-semibold">MONGODB_URI</code> to your{" "}
+          <code className="font-semibold">.env.local</code> and reload.
+        </p>
+      ) : (
+        <>
+          {data.needsSetup ? (
+            <div className="card mt-8 flex flex-wrap items-center gap-4 p-4 sm:p-6">
+              <KataMark size={44} />
+              <p className="min-w-0 flex-1 text-[1.0625rem]">
+                <span className="font-semibold">Let’s get to know each other.</span> Two minutes with {name}: what you do,
+                what’s on your plate, when to check in.
+              </p>
+              <Link href="/onboarding" className={buttonClass()}>
+                Set it up
+              </Link>
+            </div>
+          ) : null}
+
+          <div className="mt-8">
+            <HomeBoard
+              messages={data.companion.messages}
+              threads={data.companion.threads}
+              today={data.today}
+              tz={tz}
+              checkInLine={CHECK_IN_LINE[data.checkIn]}
+              moodWeek={data.companion.mood.week}
+              ai={isGroqConfigured()}
+              questions={
+                <>
+                  <TodayQuestions
+                    questions={data.companion.questions}
+                    threads={data.companion.threads}
+                    todayEntryId={data.todayEntryId}
+                    companionName={name}
+                  />
+                  <LetterCard digest={data.letter} companionName={name} />
+                </>
+              }
+              aside={<WorkingOn items={data.working} today={data.today} tz={tz} />}
+            />
+          </div>
+
+          <div className="mt-6">
+            {/* Reacting or replying here asks for a handle first if there isn't one. */}
+            <PeopleProvider handle={data.handle}>
+              <PeopleRow moments={data.moments} suggested={data.suggested} />
+            </PeopleProvider>
+          </div>
+
+          <YearCard words={data.words} stats={data.stats} />
+        </>
       )}
+    </AppPage>
+  );
+}
 
-      {data.pinnedDigest && (
-        <DigestCard
-          digest={{
-            ...data.pinnedDigest,
-          }}
-        />
-      )}
-
-      <QuickEntry todayEntry={data.todayEntry} />
-
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm uppercase tracking-widest text-text-muted font-mono">
-            One year of writing
-          </h2>
-          <Link
-            href="/history"
-            className="text-sm text-accent hover:text-accent-hover"
-          >
-            View history →
-          </Link>
-        </div>
-        <div className="rounded-2xl border border-border bg-bg-surface p-5 overflow-x-auto">
-          <ContributionGraph data={data.contributions} />
-        </div>
-      </section>
-
-      <section>
-        <h2 className="text-sm uppercase tracking-widest text-text-muted font-mono mb-4">
-          Stats
+function YearCard({ words, stats }: { words: Map<string, number>; stats: HomeData["stats"] }) {
+  const months = buildAlmanac(words, todayUtcMidnight());
+  const written = [...words.keys()].filter((d) => d >= months[0].days[0].date).length;
+  return (
+    <section aria-labelledby="year-heading" className="card mt-6 p-4 sm:p-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <h2 id="year-heading" className="font-display text-display-s">
+          Your year
         </h2>
-        <StatsBar {...data.stats} />
-      </section>
-
-      <section>
-        <h2 className="text-sm uppercase tracking-widest text-text-muted font-mono mb-4">
-          Recent entries
-        </h2>
-        <RecentEntries entries={data.recent} />
-      </section>
-    </div>
+        <Link href="/history" className="link inline-flex min-h-11 items-center text-[0.875rem] font-semibold">
+          All pages
+        </Link>
+      </div>
+      <div className="mt-6">
+        <StatsRow {...stats} />
+      </div>
+      <YearAlmanac className="mt-8" months={months} label={`${written} pages written in the last twelve months.`} />
+      <div className="rule mt-6 flex flex-wrap items-center justify-between gap-4 border-t-2 pt-4">
+        <p className="text-[0.8125rem] text-ink/65">
+          {written} {written === 1 ? "page" : "pages"} in twelve months
+        </p>
+        <AlmanacLegend />
+      </div>
+    </section>
   );
 }

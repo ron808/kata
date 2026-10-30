@@ -5,8 +5,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/shared/Button";
+import { FormAlert, TextField } from "@/components/shared/TextField";
+import { PasswordField } from "./PasswordField";
 
-export function LoginForm() {
+/** `next` is where to go after signing in: an in-app path, already checked by the page. */
+export function LoginForm({ next = "/dashboard" }: { next?: string }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -16,93 +19,57 @@ export function LoginForm() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (loading) return;
+    if (!email.trim() || !password) {
+      setFormError("Enter your email and password.");
+      return;
+    }
     setFormError(null);
     setLoading(true);
     try {
-      const res = await signIn("credentials", {
-        email,
-        password,
-        redirect: false,
-      });
+      const res = await signIn("credentials", { email, password, redirect: false });
       if (res?.error) {
-        setFormError("That email or password didn't match. Try again.");
+        setFormError("That email and password don’t match. Try again, or reset your password.");
         setLoading(false);
         return;
       }
-      router.push("/dashboard");
-      router.refresh();
+      router.push(next);
     } catch {
-      setFormError("Something went wrong. Please try again.");
+      setFormError("Something went wrong. Try again in a moment.");
       setLoading(false);
     }
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4" noValidate>
-      {formError && (
-        <div
-          role="alert"
-          aria-live="polite"
-          className="border border-danger/40 bg-danger/10 text-danger text-sm px-3.5 py-2.5"
-        >
-          {formError}
-        </div>
-      )}
-      <Field label="Email" htmlFor="login-email">
-        <input
-          id="login-email"
-          type="email"
-          autoComplete="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full bg-transparent border-b border-border-strong px-0 py-2.5 text-[16px] font-serif text-text-primary focus:border-accent transition-colors"
-        />
-      </Field>
-      <Field label="Password" htmlFor="login-password">
-        <input
+    <form onSubmit={onSubmit} className="space-y-5" noValidate>
+      {formError ? <FormAlert>{formError}</FormAlert> : null}
+      <TextField
+        id="login-email"
+        label="Email"
+        type="email"
+        autoComplete="email"
+        inputMode="email"
+        required
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+      />
+      <div>
+        <PasswordField
           id="login-password"
-          type="password"
+          label="Password"
           autoComplete="current-password"
           required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full bg-transparent border-b border-border-strong px-0 py-2.5 text-[16px] font-serif text-text-primary focus:border-accent transition-colors"
         />
-      </Field>
-      <div className="flex justify-end -mt-1">
-        <Link
-          href="/forgot"
-          className="text-[12px] text-text-muted hover:text-accent font-mono uppercase tracking-[0.18em] transition-colors"
-        >
-          Forgot password?
-        </Link>
+        <div className="mt-1 flex justify-end">
+          <Link href="/forgot" className="link -mr-1 inline-flex min-h-11 items-center px-1 text-sm font-medium text-ink/70">
+            Forgot your password?
+          </Link>
+        </div>
       </div>
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? "Signing in…" : "Sign in"}
+      <Button type="submit" size="lg" className="w-full" disabled={loading}>
+        {loading ? "Logging in…" : "Log in"}
       </Button>
     </form>
-  );
-}
-
-function Field({
-  label,
-  htmlFor,
-  children,
-}: {
-  label: string;
-  htmlFor: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label
-        htmlFor={htmlFor}
-        className="block text-[10.5px] uppercase tracking-[0.22em] text-text-muted font-mono mb-2"
-      >
-        {label}
-      </label>
-      {children}
-    </div>
   );
 }

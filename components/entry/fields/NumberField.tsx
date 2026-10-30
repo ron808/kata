@@ -7,37 +7,45 @@ export function NumberField({
   value,
   onChange,
   readOnly,
+  id,
 }: {
   field: TemplateField;
   value: number | null;
   onChange: (v: number | null) => void;
   readOnly?: boolean;
+  id?: string;
 }) {
   const unit = field.config?.unit as string | undefined;
   const min = field.config?.min as number | undefined;
   const max = field.config?.max as number | undefined;
 
+  if (readOnly) {
+    if (value == null) return <p className="text-[0.9375rem] text-ink/65">Not set</p>;
+    return (
+      <p className="flex items-baseline gap-2">
+        <span className="font-display text-display-m tabular-nums">{value.toLocaleString("en-US")}</span>
+        {unit ? <span className="text-[1.0625rem] font-semibold text-ink/70">{unit}</span> : null}
+      </p>
+    );
+  }
+
   return (
     <div className="flex items-center gap-3">
       <input
         type="number"
+        id={id}
         inputMode="decimal"
         min={min}
         max={max}
-        readOnly={readOnly}
         value={value ?? ""}
         onChange={(e) => {
           const v = e.target.value;
           onChange(v === "" ? null : Number(v));
         }}
         placeholder="0"
-        className="w-32 bg-bg-elevated/40 border border-border rounded-lg px-3.5 py-2.5 text-text-primary placeholder:text-text-muted font-mono transition-colors focus:border-accent"
+        className="control !w-36 font-display text-[1.6rem] tabular-nums"
       />
-      {unit && (
-        <span className="text-text-muted text-sm font-mono uppercase tracking-wide">
-          {unit}
-        </span>
-      )}
+      {unit ? <span className="text-[1.0625rem] font-semibold text-ink/70">{unit}</span> : null}
     </div>
   );
 }

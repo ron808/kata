@@ -1,185 +1,813 @@
 @import "tailwindcss";
 
-@theme {
-  /* Backgrounds — warm midnight ink */
-  --color-bg-base: #0e0c10;
-  --color-bg-surface: #181318;
-  --color-bg-elevated: #221c22;
-
-  /* Borders */
-  --color-border: #2a2329;
-  --color-border-strong: #3a3036;
-
-  /* Text — parchment, on ink */
-  --color-text-primary: #fdf6e3;
-  --color-text-secondary: #d4c4ad;
-  --color-text-muted: #9a8b78;
-
-  /* Accents — saffron + terracotta + sage */
-  --color-accent: #e8a05c;
-  --color-accent-hover: #f0b276;
-  --color-accent-2: #cf6f4d;
-  --color-success: #8db580;
-  --color-warning: #e8a05c;
-  --color-danger: #d96560;
-
-  /* Fonts */
-  --font-serif: var(--font-instrument-serif), "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SFMono-Regular", monospace;
-}
+/* ──────────────────────────────────────────────────────────────────────────
+   Kata design system: the sticker book. Read AGENTS.md § Design system before
+   changing tokens. Warm paper ground, ink outlines with hard offset shadows,
+   eight saturated hues for threads and people, vermilion for Kata's own voice
+   and the one primary action. Tokens are plain CSS variables so a section can
+   re-scope them (see .chapter, [data-hue]) and utilities follow along.
+   ────────────────────────────────────────────────────────────────────────── */
 
 :root {
+  --ground: #f5eddc;
+  --surface: #fffcf5;
+  --raised: #efe3cd;
+  --ink: #1d1915;
+  /* Outlines and hard shadows. Ink in the light theme, warm chalk in the dark. */
+  --edge: #1d1915;
+  --accent: #e8452b;
+  --on-accent: #fff8ee;
+  /* Marker yellow: selection, the writer's own bubble, the active tab. */
+  --sun: #ffc23a;
+  --on-sun: #2b1f00;
+  --ok: #0d6942;
+  --bad: #b52a12;
+  --warn: #855700;
+  --info: #0c4e85;
+  --on-hue: #1d1915;
+  --tape: rgb(255 255 255 / 0.5);
+
+  /* Eight hues: --h fills, --t tints, --d text on tints. Picked by [data-hue]. */
+  --h0: #ff6a4d; --h1: #ffc23a; --h2: #4fb0ff; --h3: #34c88a; --h4: #9c85ff; --h5: #ff86c2; --h6: #2ec5c5; --h7: #ff9838;
+  --t0: #ffe1d9; --t1: #fff0c7; --t2: #dcefff; --t3: #d5f4e6; --t4: #ebe6ff; --t5: #ffe1f0; --t6: #d1f3f3; --t7: #ffe5cc;
+  --d0: #8c2611; --d1: #6a4b00; --d2: #0c4e85; --d3: #0d6942; --d4: #4a32b3; --d5: #8d1e5b; --d6: #0a6565; --d7: #8a4200;
+
+  --shadow-sticker: 5px 5px 0 var(--edge);
+  --shadow-sticker-sm: 3px 3px 0 var(--edge);
+  --shadow-float: 0 18px 40px -18px rgb(40 25 10 / 0.45);
+  --header-h: 4rem;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #16120e;
+    --surface: #221c16;
+    --raised: #2d251c;
+    --ink: #fbf2e4;
+    --edge: #e9dfcf;
+    --accent: #ff6a4d;
+    --on-accent: #1d0c05;
+    --ok: #6fe0ae;
+    --bad: #ff9b85;
+    --warn: #ffd36b;
+    --info: #9ed3ff;
+    --on-hue: #16120e;
+    --tape: rgb(255 255 255 / 0.28);
+    --t0: #4b2118; --t1: #453710; --t2: #13324e; --t3: #13392b; --t4: #2d2650; --t5: #4a1f36; --t6: #0f3a3a; --t7: #4a2c11;
+    --d0: #ffc7b9; --d1: #ffe29a; --d2: #bde2ff; --d3: #b4ecd2; --d4: #d8d0ff; --d5: #ffc4e2; --d6: #aeecec; --d7: #ffd0a3;
+    --shadow-float: 0 18px 40px -18px rgb(0 0 0 / 0.8);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground: #16120e;
+  --surface: #221c16;
+  --raised: #2d251c;
+  --ink: #fbf2e4;
+  --edge: #e9dfcf;
+  --accent: #ff6a4d;
+  --on-accent: #1d0c05;
+  --ok: #6fe0ae;
+  --bad: #ff9b85;
+  --warn: #ffd36b;
+  --info: #9ed3ff;
+  --on-hue: #16120e;
+  --tape: rgb(255 255 255 / 0.28);
+  --t0: #4b2118; --t1: #453710; --t2: #13324e; --t3: #13392b; --t4: #2d2650; --t5: #4a1f36; --t6: #0f3a3a; --t7: #4a2c11;
+  --d0: #ffc7b9; --d1: #ffe29a; --d2: #bde2ff; --d3: #b4ecd2; --d4: #d8d0ff; --d5: #ffc4e2; --d6: #aeecec; --d7: #ffd0a3;
+  --shadow-float: 0 18px 40px -18px rgb(0 0 0 / 0.8);
   color-scheme: dark;
 }
 
-html, body {
-  background: #0e0c10;
-  color: #fdf6e3;
-  font-family: var(--font-sans);
-  font-size: 16px;
-  line-height: 1.65;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  font-feature-settings: "ss01", "cv11";
+/* A night chapter: the dark sticker book, in either theme. */
+.chapter {
+  --ground: #16120e;
+  --surface: #221c16;
+  --raised: #2d251c;
+  --ink: #fbf2e4;
+  --edge: #e9dfcf;
+  --accent: #ff6a4d;
+  --on-accent: #1d0c05;
+  --ok: #6fe0ae;
+  --bad: #ff9b85;
+  --warn: #ffd36b;
+  --info: #9ed3ff;
+  --on-hue: #16120e;
+  --t0: #4b2118; --t1: #453710; --t2: #13324e; --t3: #13392b; --t4: #2d2650; --t5: #4a1f36; --t6: #0f3a3a; --t7: #4a2c11;
+  --d0: #ffc7b9; --d1: #ffe29a; --d2: #bde2ff; --d3: #b4ecd2; --d4: #d8d0ff; --d5: #ffc4e2; --d6: #aeecec; --d7: #ffd0a3;
+  color-scheme: dark;
 }
 
-/* Subtle paper grain across the whole app */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  opacity: 0.04;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  mix-blend-mode: overlay;
+/* In the dark theme the chapter is already the page: lift it a step so it still reads as its own section. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .chapter {
+    --ground: #221c16;
+    --surface: #2d251c;
+    --raised: #383028;
+  }
 }
 
-body > * { position: relative; z-index: 1; }
-
-::selection {
-  background: rgba(232, 160, 92, 0.4);
-  color: #0e0c10;
+:root[data-theme="dark"] .chapter {
+  --ground: #221c16;
+  --surface: #2d251c;
+  --raised: #383028;
 }
 
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: #2a2329;
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-::-webkit-scrollbar-thumb:hover { background: #3a3036; background-clip: padding-box; }
+[data-hue="0"] { --hue: var(--h0); --tint: var(--t0); --deep: var(--d0); }
+[data-hue="1"] { --hue: var(--h1); --tint: var(--t1); --deep: var(--d1); }
+[data-hue="2"] { --hue: var(--h2); --tint: var(--t2); --deep: var(--d2); }
+[data-hue="3"] { --hue: var(--h3); --tint: var(--t3); --deep: var(--d3); }
+[data-hue="4"] { --hue: var(--h4); --tint: var(--t4); --deep: var(--d4); }
+[data-hue="5"] { --hue: var(--h5); --tint: var(--t5); --deep: var(--d5); }
+[data-hue="6"] { --hue: var(--h6); --tint: var(--t6); --deep: var(--d6); }
+[data-hue="7"] { --hue: var(--h7); --tint: var(--t7); --deep: var(--d7); }
 
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible,
-[contenteditable]:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(232, 160, 92, 0.45);
-  border-color: #e8a05c;
-}
+/* The colour the companion wears (MaruMark): set once for the app by AppShell, or on a preview. */
+[data-maru="1"] { --maru: var(--h1); --on-maru: var(--on-hue); }
+[data-maru="2"] { --maru: var(--h2); --on-maru: var(--on-hue); }
+[data-maru="3"] { --maru: var(--h3); --on-maru: var(--on-hue); }
+[data-maru="4"] { --maru: var(--h4); --on-maru: var(--on-hue); }
+[data-maru="5"] { --maru: var(--h5); --on-maru: var(--on-hue); }
+[data-maru="6"] { --maru: var(--h6); --on-maru: var(--on-hue); }
+[data-maru="7"] { --maru: var(--h7); --on-maru: var(--on-hue); }
+/* A preview of vermilion inside a coloured app. */
+[data-maru="0"] { --maru: var(--accent); --on-maru: var(--on-accent); }
 
-/* Journaling inputs (long/short text in the entry form) opt out of the boxed ring —
-   they already use a bottom-border accent on focus, so the ring looks redundant and harsh. */
-input.entry-caret:focus-visible,
-textarea.entry-caret:focus-visible {
-  box-shadow: none;
-}
+@theme {
+  --color-*: initial;
+  --font-*: initial;
+  --ease-*: initial;
 
-button:focus-visible,
-a:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(232, 160, 92, 0.45);
-}
+  --text-display-xl: clamp(3.2rem, 0.9rem + 9vw, 10.5rem);
+  --text-display-xl--line-height: 0.86;
+  --text-display-xl--letter-spacing: -0.045em;
+  --text-display-l: clamp(2.7rem, 1.3rem + 5vw, 6.25rem);
+  --text-display-l--line-height: 0.88;
+  --text-display-l--letter-spacing: -0.04em;
+  --text-display-m: clamp(2.25rem, 1.6rem + 2.4vw, 3.75rem);
+  --text-display-m--line-height: 0.92;
+  --text-display-m--letter-spacing: -0.035em;
+  --text-display-s: clamp(1.6rem, 1.4rem + 0.8vw, 2.1rem);
+  --text-display-s--line-height: 0.98;
+  --text-display-s--letter-spacing: -0.03em;
+  --text-prompt: clamp(1.25rem, 1.15rem + 0.45vw, 1.55rem);
+  --text-prompt--line-height: 1.2;
+  --text-prose: clamp(1.0625rem, 1.02rem + 0.2vw, 1.1875rem);
+  --text-prose--line-height: 1.65;
+  --text-lede: clamp(1.0625rem, 1rem + 0.3vw, 1.25rem);
+  --text-lede--line-height: 1.5;
 
-/* Display headings default to serif italic */
-.font-serif { font-family: var(--font-serif); }
+  --spacing-margin: clamp(1rem, 0.6rem + 2vw, 2.5rem);
+  --spacing-section: clamp(5rem, 3rem + 8vw, 10rem);
 
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
+  --radius-xs: 8px;
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
 
-@keyframes loading-stripe {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(400%); }
-}
-.loading-stripe { animation: loading-stripe 1s ease-in-out infinite; }
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
 
-.shimmer-border::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(
-    110deg,
-    rgba(232, 160, 92, 0.1) 0%,
-    rgba(232, 160, 92, 0.55) 35%,
-    rgba(207, 111, 77, 0.4) 50%,
-    rgba(232, 160, 92, 0.55) 65%,
-    rgba(232, 160, 92, 0.1) 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 5s linear infinite;
-  -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
+  --breakpoint-xs: 25rem;
 }
 
-.btn-glow {
-  box-shadow:
-    0 0 0 1px rgba(232, 160, 92, 0.5),
-    0 12px 32px -10px rgba(232, 160, 92, 0.45);
+@theme inline {
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-ink: var(--ink);
+  --color-edge: var(--edge);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-sun: var(--sun);
+  --color-on-sun: var(--on-sun);
+  --color-ok: var(--ok);
+  --color-bad: var(--bad);
+  --color-warn: var(--warn);
+  --color-info: var(--info);
+  --color-hue: var(--hue);
+  --color-tint: var(--tint);
+  --color-deep: var(--deep);
+  --color-on-hue: var(--on-hue);
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --font-sans: var(--font-instrument-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-bricolage), var(--font-instrument-sans), ui-rounded, system-ui, sans-serif;
+
+  --shadow-sticker: var(--shadow-sticker);
+  --shadow-sticker-sm: var(--shadow-sticker-sm);
+  --shadow-float: var(--shadow-float);
+  /* The Lab's prototypes still float paper objects; they get the floating shadow. */
+  --shadow-paper: var(--shadow-float);
 }
 
-.entry-caret { caret-color: #e8a05c; }
+@layer base {
+  html {
+    background-color: var(--ground);
+    color: var(--ink);
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    scroll-padding-top: calc(var(--header-h) + 1rem);
+  }
 
-input[type="number"]::-webkit-outer-spin-button,
-input[type="number"]::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
+  html.lenis,
+  html.lenis body {
+    height: auto;
+  }
+
+  html.lenis {
+    scroll-behavior: auto;
+  }
+
+  body {
+    min-height: 100svh;
+    overflow-x: clip;
+    background-color: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-kerning: normal;
+  }
+
+  ::selection {
+    background-color: var(--sun);
+    color: var(--on-sun);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline-offset: 0;
+  }
+
+  button,
+  [role="button"] {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
 }
-input[type="number"] { -moz-appearance: textfield; }
 
-/* Editorial dividers */
-.rule-thick { border-top: 4px double #3a3036; }
-.rule-fine  { border-top: 1px solid #2a2329; }
+/* ── Materials ───────────────────────────────────────────────────────────── */
 
-/* Hero ambient glow */
-.glow-radial {
-  background: radial-gradient(
-    ellipse 900px 500px at 50% -10%,
-    rgba(232, 160, 92, 0.18),
-    transparent 65%
-  );
+@layer components {
+  /* Display type: Bricolage, heavy and a little condensed. */
+  .font-display {
+    font-weight: 800;
+    font-stretch: 84%;
+    font-variation-settings: "opsz" 96;
+  }
+
+  .chapter {
+    background-color: var(--ground);
+    color: var(--ink);
+  }
+
+  /* A sticker: the card everything sits on. Ink outline, hard offset shadow. */
+  .card {
+    position: relative;
+    background-color: var(--surface);
+    border: 2px solid var(--edge);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sticker);
+  }
+
+  /* A recess inside a card. */
+  .well {
+    background-color: var(--raised);
+    border-radius: var(--radius-md);
+  }
+
+  /* Kept for pages that were sheets of paper: they are cards now. */
+  .sheet {
+    background-color: var(--surface);
+    border: 2px solid var(--edge);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sticker);
+  }
+
+  /* Pressable pill. Pressed, checked or selected turns marker yellow. */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    min-height: 2.75rem;
+    padding: 0 1rem;
+    border-radius: 999px;
+    border: 2px solid var(--edge);
+    background-color: var(--surface);
+    color: var(--ink);
+    font-size: 0.9375rem;
+    font-weight: 500;
+    white-space: nowrap;
+    box-shadow: var(--shadow-sticker-sm);
+    transition: transform 0.3s var(--ease-out), box-shadow 0.3s var(--ease-out), background-color 0.3s var(--ease-out), color 0.3s var(--ease-out);
+  }
+  .chip[aria-pressed="true"],
+  .chip[aria-checked="true"],
+  .chip[aria-selected="true"],
+  .chip[aria-current="page"] {
+    background-color: var(--sun);
+    color: var(--on-sun);
+  }
+  .chip:disabled,
+  .chip[aria-disabled="true"] {
+    opacity: 0.45;
+    box-shadow: none;
+  }
+  .chip-sm {
+    min-height: 2.25rem;
+    padding: 0 0.7rem;
+    font-size: 0.8125rem;
+    gap: 0.3rem;
+  }
+  /* Fingers need the full 44 px. */
+  @media (max-width: 1023px), (pointer: coarse) {
+    .chip-sm {
+      min-height: 2.75rem;
+    }
+  }
+
+  /* Anything else that presses like a sticker (buttons). Its shadow lives here, not in a
+     utility, so hover and active can move it. */
+  .press {
+    box-shadow: var(--shadow-sticker-sm);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .chip:not(:disabled):not([aria-disabled="true"]):hover,
+    .press:not(:disabled):hover {
+      transform: translate(-1px, -1px);
+      box-shadow: 4px 4px 0 var(--edge);
+    }
+  }
+  .chip:not(:disabled):active,
+  .press:not(:disabled):active {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0 var(--edge);
+  }
+
+  /* A small coloured label: a tag, a kind, a count. Takes its colour from [data-hue]. */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    height: 1.6rem;
+    padding: 0 0.6rem;
+    border-radius: 999px;
+    border: 1.5px solid var(--edge);
+    background-color: var(--hue, var(--sun));
+    color: var(--on-hue);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  /* A row of equal steps: the mood check, the reactions, view switches. */
+  .scale {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    overflow: hidden;
+    border-radius: 18px;
+    border: 2px solid var(--edge);
+    background-color: var(--surface);
+    box-shadow: var(--shadow-sticker-sm);
+  }
+  .scale > * + * {
+    border-left: 2px solid var(--edge);
+  }
+  .scale-step {
+    display: grid;
+    justify-items: center;
+    align-content: center;
+    gap: 5px;
+    min-height: 3.25rem;
+    padding: 0.4rem 0.2rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--ink);
+    transition: background-color 0.3s var(--ease-out), color 0.3s var(--ease-out), opacity 0.3s var(--ease-out);
+  }
+  .scale-step[aria-pressed="true"],
+  .scale-step[aria-checked="true"],
+  .scale-step[aria-selected="true"] {
+    background-color: var(--sun);
+    color: var(--on-sun);
+  }
+  .scale-step:disabled {
+    opacity: 0.4;
+  }
+  .scale-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.3rem;
+    min-height: 2.75rem;
+    padding: 0 0.3rem;
+    white-space: nowrap;
+  }
+
+  /* A person's (or a thread's) round seal: their hue, their initial. */
+  .avatar {
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+    border-radius: 999px;
+    border: 2px solid var(--edge);
+    background-color: var(--hue, var(--h2));
+    color: var(--on-hue);
+    font-family: var(--font-display);
+    font-weight: 800;
+    line-height: 1;
+  }
+
+  /* Kata speaks in ink; the writer answers in marker. */
+  .bubble-kata {
+    background-color: var(--ink);
+    color: var(--ground);
+    border-radius: 22px;
+    border-top-left-radius: 6px;
+  }
+  .bubble-you {
+    background-color: var(--sun);
+    color: var(--on-sun);
+    border: 2px solid var(--edge);
+    border-radius: 22px;
+    border-top-right-radius: 6px;
+  }
+
+  /* Washi tape holding a card to the page. Colour from [data-hue]. */
+  .tape {
+    position: absolute;
+    top: -11px;
+    left: 50%;
+    width: 78px;
+    height: 22px;
+    translate: -50% 0;
+    rotate: -3deg;
+    background-color: color-mix(in srgb, var(--hue, var(--h1)) 70%, transparent);
+    -webkit-mask: linear-gradient(90deg, transparent 0 3px, #000 3px calc(100% - 3px), transparent 0);
+    mask: linear-gradient(90deg, transparent 0 3px, #000 3px calc(100% - 3px), transparent 0);
+    pointer-events: none;
+  }
+
+  /* A marker swipe behind a word. */
+  .mark {
+    position: relative;
+    z-index: 0;
+  }
+  .mark::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: 52% -0.08em 0.02em -0.08em;
+    background-color: var(--sun);
+    border-radius: 0.2em;
+    rotate: -1.2deg;
+  }
+  /* Light text on yellow is hard to read: in the dark book the swipe is tomato. */
+  :root[data-theme="dark"] .mark::before,
+  .chapter .mark::before {
+    background-color: var(--h0);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .mark::before {
+      background-color: var(--h0);
+    }
+  }
+
+  /* Status colours for threads. */
+  .status-moving { color: var(--ok); }
+  .status-stuck { color: var(--bad); }
+  .status-waiting { color: var(--warn); }
+  .status-done { color: var(--info); }
+  .status-paused { color: color-mix(in oklab, var(--ink) 65%, transparent); }
+  .pip {
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 999px;
+    background-color: currentColor;
+  }
+
+  /* Ruled writing surface. Text sits on the rules because line-height equals the rule pitch. */
+  .ruled {
+    --rule: 2.125rem;
+    line-height: var(--rule);
+    background-image: linear-gradient(
+      to bottom,
+      transparent calc(var(--rule) - 1.5px),
+      color-mix(in oklab, var(--edge) 16%, transparent) calc(var(--rule) - 1.5px)
+    );
+    background-size: 100% var(--rule);
+    background-attachment: local;
+  }
+
+  /* Hairline in ink, for structure inside a card. */
+  .rule {
+    border-color: color-mix(in oklab, var(--ink) 14%, transparent);
+  }
+
+  /* Inline text link: a thick underline that fills with marker on hover. */
+  .link {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 0.2em;
+    text-decoration-color: color-mix(in oklab, currentColor 40%, transparent);
+    transition: color 0.3s var(--ease-out), text-decoration-color 0.3s var(--ease-out), background-color 0.3s var(--ease-out);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .link:hover {
+      text-decoration-color: var(--accent);
+    }
+  }
+
+  /* Form controls share one shape. */
+  .control {
+    width: 100%;
+    min-height: 3.25rem;
+    border-radius: var(--radius-md);
+    border: 2px solid var(--edge);
+    background-color: var(--surface);
+    padding: 0.7rem 1rem;
+    font-size: 1rem;
+    color: var(--ink);
+    transition: box-shadow 0.3s var(--ease-out), border-color 0.3s var(--ease-out);
+  }
+
+  .control::placeholder {
+    color: color-mix(in oklab, var(--ink) 50%, transparent);
+  }
+
+  .control:focus-visible {
+    outline: none;
+    box-shadow: 4px 4px 0 var(--accent);
+  }
+
+  .control[aria-invalid="true"] {
+    border-color: var(--bad);
+    box-shadow: 4px 4px 0 var(--bad);
+  }
+
+  /* Writing fields: no box, the page is the box. */
+  .writing {
+    width: 100%;
+    resize: none;
+    overflow: hidden;
+    background-color: transparent;
+    border: 0;
+    padding: 0;
+    font-family: var(--font-sans);
+    font-size: var(--text-prose);
+    color: var(--ink);
+    caret-color: var(--accent);
+  }
+
+  .writing::placeholder {
+    color: color-mix(in oklab, var(--ink) 45%, transparent);
+  }
+
+  .writing:focus-visible {
+    outline: none;
+  }
+
+  /* Hide scrollbars on swipe strips (the next card peeking in is the affordance). */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Drop cap for letters. */
+  .dropcap::first-letter {
+    float: left;
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-stretch: 84%;
+    font-size: 4.2em;
+    line-height: 0.8;
+    margin: 0.04em 0.08em 0 -0.02em;
+    color: var(--accent);
+  }
+
+  /* Kata typing: three dots, only while a reply is on its way. */
+  .typing {
+    display: inline-flex;
+    gap: 4px;
+  }
+  .typing i {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background-color: currentColor;
+    opacity: 0.35;
+    animation: kata-typing 1s var(--ease-out) infinite;
+  }
+  .typing i:nth-child(2) { animation-delay: 0.15s; }
+  .typing i:nth-child(3) { animation-delay: 0.3s; }
+
+  .appear {
+    animation: kata-appear 0.45s var(--ease-out) both;
+  }
+
+  /* The map of what is on your mind: threads as round stickers around you.
+     Sizes are container units of the map, so it scales with its card. */
+  .map {
+    position: relative;
+    container-type: inline-size;
+    aspect-ratio: 1;
+  }
+  .map svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+  .map-link {
+    stroke: var(--edge);
+    stroke-width: 2;
+    stroke-dasharray: 5 6;
+    fill: none;
+    vector-effect: non-scaling-stroke;
+  }
+  .map-node {
+    --s: 27cqi;
+    position: absolute;
+    left: var(--x);
+    top: var(--y);
+    translate: -50% -50%;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    width: var(--s);
+    aspect-ratio: 1;
+    padding: 0 calc(var(--s) * 0.1);
+    border-radius: 999px;
+    border: 2.5px solid var(--edge);
+    background-color: var(--hue);
+    color: var(--on-hue);
+    text-align: center;
+    box-shadow: 4px 4px 0 var(--edge);
+    transform: rotate(var(--tilt, 0deg));
+    transition: transform 0.45s var(--ease-out), box-shadow 0.45s var(--ease-out);
+  }
+  .map-node[data-weight="3"] { --s: 33cqi; }
+  .map-node[data-weight="1"] { --s: 22cqi; }
+  .map-node:hover { transform: rotate(0deg) scale(1.04); }
+  .map-node[aria-pressed="true"] {
+    z-index: 2;
+    transform: rotate(0deg) scale(1.08);
+    box-shadow: 6px 6px 0 var(--edge);
+  }
+  .map-title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-stretch: 84%;
+    letter-spacing: -0.02em;
+    font-size: clamp(12px, calc(var(--s) * 0.13), 17px);
+    line-height: 1.02;
+  }
+  .map-node[data-weight="1"] .map-title { -webkit-line-clamp: 2; }
+  .map-meta {
+    margin-top: 0.25em;
+    font-size: clamp(12px, calc(var(--s) * 0.09), 13px);
+    font-weight: 600;
+    line-height: 1.15;
+    opacity: 0.82;
+  }
+  .map-me {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    translate: -50% -50%;
+    display: grid;
+    place-items: center;
+    width: 17cqi;
+    aspect-ratio: 1;
+    border-radius: 999px;
+    background-color: var(--ink);
+    color: var(--ground);
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: clamp(11px, 3.6cqi, 16px);
+    rotate: -8deg;
+  }
 }
 
-.dot-grid {
-  background-image: radial-gradient(circle, rgba(232, 160, 92, 0.07) 1px, transparent 1px);
-  background-size: 28px 28px;
+@keyframes kata-typing {
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
 }
 
-/* Drop cap utility for editorial passages */
-.dropcap::first-letter {
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-size: 4.2em;
-  line-height: 0.85;
-  float: left;
-  margin: 0.08em 0.08em 0 0;
-  color: #e8a05c;
+@keyframes kata-appear {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
 
-/* Number pill for ordered editorial sections */
-.numeral {
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-feature-settings: "lnum";
+/* ── Scroll scenes ───────────────────────────────────────────────────────────
+   `staged:` applies only when JS is available (html.js, set inline before first
+   paint) and motion is welcome. Runways are therefore in CSS: the page height is
+   final before any script arrives. Without JS or with reduced motion, every scene
+   falls back to a complete static layout. */
+
+@custom-variant staged {
+  @media (prefers-reduced-motion: no-preference) {
+    /* Not :where(): the extra specificity lets staged rules beat responsive static ones. */
+    html.js & {
+      @slot;
+    }
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+
+@keyframes kata-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(0.85);
+  }
+}
+
+/* ── View transitions (app navigation) ───────────────────────────────────── */
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.32s;
+  animation-timing-function: var(--ease-out);
+}
+
+/* ── Reduced motion: the global kill switch ──────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0s !important;
+  }
 }

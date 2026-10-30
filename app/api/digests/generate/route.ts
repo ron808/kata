@@ -4,7 +4,7 @@ import { connectDB } from "@/lib/db/mongoose";
 import { User } from "@/lib/db/models/User";
 import { Entry } from "@/lib/db/models/Entry";
 import { Digest } from "@/lib/db/models/Digest";
-import { GROQ_MODEL, groq, isGroqConfigured } from "@/lib/ai/groq";
+import { WRITING_MODELS, complete, isGroqConfigured } from "@/lib/ai/groq";
 import { monthlyPrompt, weeklyPrompt } from "@/lib/ai/prompts";
 import { addDays, todayUtcMidnight } from "@/lib/utils/dates";
 import { handleError, jsonError } from "@/lib/api";
@@ -47,15 +47,18 @@ async function generateForUser(
           entries,
         });
 
-  const completion = await groq().chat.completions.create({
-    model: GROQ_MODEL,
-    messages: [
-      { role: "system", content: prompt.system },
-      { role: "user", content: prompt.user },
-    ],
-    temperature: 0.7,
-    max_tokens: kind === "weekly" ? 500 : 800,
-  });
+  // Reasoning counts against max_tokens, so leave room beyond the letter itself.
+  const completion = await complete(
+    {
+      messages: [
+        { role: "system", content: prompt.system },
+        { role: "user", content: prompt.user },
+      ],
+      temperature: 0.7,
+      max_tokens: kind === "weekly" ? 1500 : 2200,
+    },
+    { models: WRITING_MODELS, timeout: 60_000 }
+  );
 
   const content = completion.choices[0]?.message?.content?.trim();
   if (!content) return null;

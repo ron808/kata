@@ -1,82 +1,37 @@
-import Link from "next/link";
-import { Logo } from "@/components/shared/Logo";
-import { LandingHero } from "@/components/landing/LandingHero";
-import { RolePreview } from "@/components/landing/RolePreview";
-import { FeatureHighlights } from "@/components/landing/FeatureHighlights";
-import { TemplateGalleryTeaser } from "@/components/landing/TemplateGalleryTeaser";
+import { BeginSection } from "@/components/landing/BeginSection";
+import { Hero } from "@/components/landing/Hero";
+import { MindScene } from "@/components/landing/MindScene";
+import { PeopleSection } from "@/components/landing/PeopleSection";
+import { PrivateSection } from "@/components/landing/PrivateSection";
+import { QuestionsSection } from "@/components/landing/QuestionsSection";
+import { RolesSection } from "@/components/landing/RolesSection";
+import Scenes from "@/components/landing/Scenes";
+import { SessionCheck } from "@/components/landing/Session";
+import { SiteFooter } from "@/components/landing/SiteFooter";
+import { SiteHeader } from "@/components/landing/SiteHeader";
+import { formatDate } from "@/lib/utils/dates";
+
+// Static and cached for everyone; regenerated hourly so the server-rendered date is
+// today's (UTC). Who's signed in is checked in the browser (SessionCheck).
+export const revalidate = 3600;
 
 export default function LandingPage() {
+  const now = new Date();
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="sticky top-0 z-30 border-b border-border/60 bg-bg-base/80 backdrop-blur-md">
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <Logo />
-          <nav className="flex items-center gap-1 text-sm">
-            <Link
-              href="/login"
-              className="text-text-secondary hover:text-text-primary px-4 py-2 rounded-md transition-colors"
-            >
-              Log in
-            </Link>
-            <Link
-              href="/register"
-              className="bg-accent hover:bg-accent-hover text-bg-base font-medium px-4 py-2 rounded-md transition-colors"
-            >
-              Start free
-            </Link>
-          </nav>
-        </div>
-      </header>
-
-      <main className="flex-1">
-        <LandingHero />
-        <RolePreview />
-        <FeatureHighlights />
-        <TemplateGalleryTeaser />
-
-        <section className="py-24 px-6 border-t border-border/60">
-          <div className="max-w-3xl mx-auto text-center">
-            <p className="font-serif italic text-3xl md:text-5xl leading-[1.15] tracking-tight text-text-primary">
-              &ldquo;The good kind of habit isn&apos;t loud — <span className="text-accent">it&apos;s the quiet thing you keep showing up for.</span>&rdquo;
-            </p>
-            <div className="mt-10 flex items-center justify-center gap-6">
-              <Link
-                href="/register"
-                className="bg-accent hover:bg-accent-hover text-bg-base font-medium px-7 py-4 rounded-md btn-glow transition-colors inline-flex items-center gap-2"
-              >
-                Begin volume one <span aria-hidden>→</span>
-              </Link>
-              <Link
-                href="/login"
-                className="text-text-secondary hover:text-text-primary text-base"
-              >
-                Already writing? Log in
-              </Link>
-            </div>
-          </div>
-        </section>
+    <>
+      <SiteHeader />
+      <main id="main">
+        <Hero />
+        <MindScene />
+        <QuestionsSection todayLong={formatDate(now, "long", "UTC")} />
+        <PeopleSection />
+        <RolesSection />
+        <PrivateSection />
+        <BeginSection todayWeekday={formatDate(now, "weekday", "UTC")} />
       </main>
-
-      <footer className="border-t border-border py-12 px-6">
-        <div className="max-w-6xl mx-auto grid md:grid-cols-3 gap-8 text-sm text-text-muted items-start">
-          <div>
-            <Logo className="text-text-primary" />
-            <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.22em]">
-              型 — form, structure, pattern
-            </p>
-          </div>
-          <nav className="flex flex-col gap-1.5 text-text-secondary">
-            <span className="text-[11px] uppercase tracking-[0.22em] text-text-muted font-mono mb-1">
-              The journal
-            </span>
-            <Link href="/login" className="hover:text-accent">Log in</Link>
-            <Link href="/register" className="hover:text-accent">Start writing</Link>
-          </nav>
-          <div className="font-serif italic text-text-secondary text-lg leading-snug">
-            A small, slow website. Built to be useful for a long time.
-          </div>
-        </div>
-      </footer>
-    </div>
+      <SiteFooter />
+      <SessionCheck />
+      <Scenes />
+    </>
   );
 }

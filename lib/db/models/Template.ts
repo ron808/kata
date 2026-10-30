@@ -16,6 +16,8 @@ export interface ITemplate {
   name: string;
   description: string;
   isPublished: boolean;
+  /** In the gallery, show who made it, so people can write to ask how it's going. */
+  credit: boolean;
   publishedSlug: string | null;
   cloneCount: number;
   clonedFrom: mongoose.Types.ObjectId | null;
@@ -48,6 +50,7 @@ const TemplateSchema = new Schema<ITemplate>(
     name: { type: String, required: true, trim: true },
     description: { type: String, default: "" },
     isPublished: { type: Boolean, default: false },
+    credit: { type: Boolean, default: false },
     publishedSlug: { type: String, default: null },
     cloneCount: { type: Number, default: 0 },
     clonedFrom: {

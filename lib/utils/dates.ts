@@ -41,6 +41,40 @@ export function formatLongDate(d: Date | string): string {
   });
 }
 
+export type DateStyle = "long" | "weekday" | "monthDay" | "day";
+
+const DATE_STYLES: Record<DateStyle, Intl.DateTimeFormatOptions> = {
+  long: { weekday: "long", month: "long", day: "numeric" },
+  weekday: { weekday: "long" },
+  monthDay: { month: "long", day: "numeric" },
+  day: { day: "numeric" },
+};
+
+/** Format a calendar date for display. Pass timeZone "UTC" on the server for a stable result. */
+export function formatDate(d: Date, style: DateStyle, timeZone?: string): string {
+  return d.toLocaleDateString("en-US", { ...DATE_STYLES[style], timeZone });
+}
+
+/** A digest period: "Oct 19 – 25", "Sep 28 – Oct 4", or the month for monthly letters. */
+export function formatRange(a: Date | string, b: Date | string, monthly = false): string {
+  const s = new Date(a);
+  const e = new Date(b);
+  if (monthly) return s.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+  const m = (d: Date) => d.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" });
+  return s.getUTCMonth() === e.getUTCMonth()
+    ? `${m(s)} ${s.getUTCDate()} – ${e.getUTCDate()}`
+    : `${m(s)} ${s.getUTCDate()} – ${m(e)} ${e.getUTCDate()}`;
+}
+
+/** Hour of day in a time zone, for greetings. Falls back to UTC for unknown zones. */
+export function hourIn(timeZone: string, d = new Date()): number {
+  try {
+    return Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone }).format(d));
+  } catch {
+    return d.getUTCHours();
+  }
+}
+
 export function formatShortDate(d: Date | string): string {
   const date = typeof d === "string" ? new Date(d) : d;
   return date.toLocaleDateString("en-US", {

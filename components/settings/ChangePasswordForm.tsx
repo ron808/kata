@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { PasswordField } from "@/components/auth/PasswordField";
 import { Button } from "@/components/shared/Button";
+import { FormAlert } from "@/components/shared/TextField";
 import { useToast } from "@/components/shared/Toast";
 
-type FieldErrors = Partial<
-  Record<"currentPassword" | "newPassword" | "confirm", string>
->;
+type FieldErrors = Partial<Record<"currentPassword" | "newPassword" | "confirm", string>>;
 
 export function ChangePasswordForm() {
   const { toast } = useToast();
@@ -19,11 +19,10 @@ export function ChangePasswordForm() {
 
   function validate(): FieldErrors {
     const e: FieldErrors = {};
-    if (!currentPassword) e.currentPassword = "Required.";
+    if (!currentPassword) e.currentPassword = "Enter your current password.";
     if (newPassword.length < 8) e.newPassword = "Use at least 8 characters.";
-    if (newPassword === currentPassword && newPassword.length > 0)
-      e.newPassword = "Pick something different from your current password.";
-    if (newPassword !== confirm) e.confirm = "Passwords don't match.";
+    else if (newPassword === currentPassword) e.newPassword = "Pick something different from your current password.";
+    if (!e.newPassword && newPassword !== confirm) e.confirm = "These don’t match yet.";
     return e;
   }
 
@@ -33,7 +32,11 @@ export function ChangePasswordForm() {
     const v = validate();
     setErrs(v);
     setFormError(null);
-    if (Object.keys(v).length > 0) return;
+    const first = (["currentPassword", "newPassword", "confirm"] as const).find((k) => v[k]);
+    if (first) {
+      document.getElementById({ currentPassword: "cp-current", newPassword: "cp-new", confirm: "cp-confirm" }[first])?.focus();
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/auth/change-password", {
@@ -43,9 +46,10 @@ export function ChangePasswordForm() {
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        const msg = data.error ?? "Could not change password.";
+        const msg = data.error ?? "Couldn’t change your password. Try again.";
         if (/current password/i.test(msg)) {
           setErrs({ currentPassword: msg });
+          document.getElementById("cp-current")?.focus();
         } else {
           setFormError(msg);
         }
@@ -57,103 +61,45 @@ export function ChangePasswordForm() {
       setConfirm("");
       setErrs({});
     } catch {
-      setFormError("Something went wrong. Please try again.");
+      setFormError("Something went wrong. Try again in a moment.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4" noValidate>
-      {formError && (
-        <div
-          role="alert"
-          aria-live="polite"
-          className="border border-danger/40 bg-danger/10 text-danger text-sm px-3.5 py-2.5 rounded-lg"
-        >
-          {formError}
-        </div>
-      )}
-      <PwField
-        label="Current password"
+    <form onSubmit={onSubmit} className="space-y-5" noValidate aria-labelledby="password-title">
+      {formError ? <FormAlert>{formError}</FormAlert> : null}
+      <PasswordField
         id="cp-current"
+        label="Current password"
         autoComplete="current-password"
         value={currentPassword}
-        onChange={setCurrentPassword}
+        onChange={(e) => setCurrentPassword(e.target.value)}
         error={errs.currentPassword}
       />
-      <PwField
-        label="New password"
+      <PasswordField
         id="cp-new"
+        label="New password"
         autoComplete="new-password"
+        maxLength={120}
         value={newPassword}
-        onChange={setNewPassword}
+        onChange={(e) => setNewPassword(e.target.value)}
         error={errs.newPassword}
         hint="At least 8 characters."
       />
-      <PwField
-        label="Confirm new password"
+      <PasswordField
         id="cp-confirm"
+        label="Type it again"
         autoComplete="new-password"
+        maxLength={120}
         value={confirm}
-        onChange={setConfirm}
+        onChange={(e) => setConfirm(e.target.value)}
         error={errs.confirm}
       />
-      <div className="pt-1">
-        <Button type="submit" disabled={loading}>
-          {loading ? "Updating…" : "Update password"}
-        </Button>
-      </div>
+      <Button type="submit" variant="secondary" disabled={loading}>
+        {loading ? "Updating…" : "Update password"}
+      </Button>
     </form>
-  );
-}
-
-function PwField({
-  label,
-  id,
-  autoComplete,
-  value,
-  onChange,
-  error,
-  hint,
-}: {
-  label: string;
-  id: string;
-  autoComplete: string;
-  value: string;
-  onChange: (v: string) => void;
-  error?: string;
-  hint?: string;
-}) {
-  const errId = `${id}-err`;
-  const hintId = `${id}-hint`;
-  return (
-    <div>
-      <label
-        htmlFor={id}
-        className="block text-[10.5px] uppercase tracking-[0.22em] text-text-muted font-mono mb-2"
-      >
-        {label}
-      </label>
-      <input
-        id={id}
-        type="password"
-        autoComplete={autoComplete}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-invalid={Boolean(error)}
-        aria-describedby={error ? errId : hint ? hintId : undefined}
-        className="w-full bg-transparent border-b border-border-strong px-0 py-2.5 text-[16px] font-serif text-text-primary focus:border-accent transition-colors"
-      />
-      {error ? (
-        <span id={errId} role="alert" className="block text-xs text-danger mt-1.5">
-          {error}
-        </span>
-      ) : hint ? (
-        <span id={hintId} className="block text-xs text-text-muted mt-1.5">
-          {hint}
-        </span>
-      ) : null}
-    </div>
   );
 }

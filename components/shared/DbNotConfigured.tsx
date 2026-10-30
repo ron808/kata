@@ -1,45 +1,46 @@
+import { AppPage, PageHeader } from "./AppPage";
+import { KataMark } from "./Avatar";
+
+/** Local setup: Kata can't reach MongoDB, so there's nowhere to keep pages yet. */
 export function DbNotConfigured({ error }: { error?: string | null }) {
   return (
-    <div className="max-w-2xl mx-auto px-6 pt-24 pb-32">
-      <div className="text-[11px] uppercase tracking-[0.22em] text-accent font-mono">
-        Setup · required
-      </div>
-      <h1 className="font-serif italic text-5xl mt-4 leading-[1.05] tracking-tight">
-        The library isn&#x2019;t open yet.
-      </h1>
-      <p className="text-text-secondary mt-5 text-[15px] leading-[1.75]">
-        Kata needs a MongoDB connection before it can store your pages. Add a
-        <code className="font-mono text-[13px] mx-1.5 px-1.5 py-0.5 bg-bg-elevated border border-border">MONGODB_URI</code>
-        to your local{" "}
-        <code className="font-mono text-[13px] mx-1 px-1.5 py-0.5 bg-bg-elevated border border-border">.env.local</code>
-        and restart the dev server.
-      </p>
-
-      <div className="mt-10 border border-border bg-bg-surface">
-        <div className="border-b border-border px-5 py-3 text-[11px] uppercase tracking-[0.22em] text-text-muted font-mono">
-          .env.local
+    <AppPage width="text">
+      <PageHeader
+        title={
+          <>
+            Kata can’t reach its <span className="mark">database</span>.
+          </>
+        }
+        lede="Pages, threads and check-ins all live in MongoDB. Once it’s connected, this page fills in."
+      />
+      <section aria-label="How to connect it" className="card mt-10 p-5 sm:p-7">
+        <div className="flex items-start gap-3">
+          <KataMark size={36} cut="surface" />
+          <p className="bubble-kata px-4 py-2.5 text-[0.9375rem] leading-snug">
+            <span className="sr-only">Maru says: </span>
+            Add a MONGODB_URI to .env.local, then restart the dev server. I’ll be right here.
+          </p>
         </div>
-        <pre className="px-5 py-4 text-[13px] font-mono text-text-secondary overflow-x-auto">
-{`MONGODB_URI="mongodb://localhost:27017/kata"
+        <figure className="well mt-6 overflow-clip">
+          <figcaption className="rule border-b-2 px-5 py-3 text-sm font-semibold text-ink/70">.env.local</figcaption>
+          <pre className="overflow-x-auto px-5 py-4 text-[0.875rem] leading-relaxed">
+            {`MONGODB_URI="mongodb://localhost:27017/kata"
 NEXTAUTH_SECRET="generate-with-openssl-rand-base64-32"
 NEXTAUTH_URL="http://localhost:3000"`}
-        </pre>
-      </div>
+          </pre>
+        </figure>
 
-      {error && (
-        <div className="mt-6 border border-danger/40 bg-danger/5 px-5 py-4">
-          <div className="text-[11px] uppercase tracking-[0.22em] text-danger font-mono mb-2">
-            Server said
+        {error ? (
+          <div data-hue="0" className="mt-5 rounded-md border-2 border-edge bg-tint px-5 py-4 text-deep">
+            <p className="text-sm font-semibold">The server said</p>
+            <p className="mt-1 text-[0.9375rem] [overflow-wrap:anywhere]">{error}</p>
           </div>
-          <p className="text-sm text-text-primary font-mono break-words">{error}</p>
-        </div>
-      )}
+        ) : null}
 
-      <p className="text-text-muted text-[13px] mt-8 leading-[1.7]">
-        No Mongo handy? Spin up a free cluster on{" "}
-        <span className="text-accent">MongoDB Atlas</span>, paste the
-        connection string above, and you&#x2019;re writing in seconds.
-      </p>
-    </div>
+        <p className="mt-6 text-[0.9375rem] text-ink/75">
+          No Mongo handy? A free MongoDB Atlas cluster works: paste its connection string above and restart.
+        </p>
+      </section>
+    </AppPage>
   );
 }

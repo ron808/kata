@@ -1,14 +1,21 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
-import { createContext, useCallback, useContext, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { createPortal } from "react-dom";
+import { Icon } from "./Icon";
 
 type ToastTone = "default" | "success" | "danger";
 interface ToastItem {
   id: number;
   message: string;
   tone: ToastTone;
+  leaving: boolean;
 }
 
 const ToastCtx = createContext<{
@@ -16,66 +23,59 @@ const ToastCtx = createContext<{
 } | null>(null);
 
 let toastId = 0;
+const subscribe = () => () => {};
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
+  // The portal target only exists in the browser; render it after hydration so
+  // the server and client trees match.
+  const mounted = useSyncExternalStore(subscribe, () => true, () => false);
 
   const toast = useCallback((message: string, tone: ToastTone = "default") => {
     const id = ++toastId;
-    setItems((prev) => [...prev, { id, message, tone }]);
+    setItems((prev) => [...prev, { id, message, tone, leaving: false }]);
+    // Fade out, then remove. Plain CSS keeps animation libraries off public pages.
+    setTimeout(() => {
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, leaving: true } : i)));
+    }, 3000);
     setTimeout(() => {
       setItems((prev) => prev.filter((i) => i.id !== id));
-    }, 3000);
+    }, 3400);
   }, []);
 
-  // Render the toast layer as a portal directly into <body> so it can't be
-  // trapped or clipped by any parent stacking context / transform.
+  // Portal into <body> so no parent transform or stacking context can trap it.
   const layer = (
     <div
       aria-live="polite"
       aria-atomic="true"
-      style={{
-        position: "fixed",
-        top: "max(env(safe-area-inset-top), 12px)",
-        left: "12px",
-        right: "12px",
-        zIndex: 2147483000,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: "8px",
-        pointerEvents: "none",
-      }}
+      className="pointer-events-none fixed inset-x-3 z-[2147483000] flex flex-col items-center gap-2"
+      style={{ top: "max(env(safe-area-inset-top), 0.75rem)" }}
     >
-      <AnimatePresence>
-        {items.map((item) => (
-          <motion.div
-            key={item.id}
-            role="status"
-            initial={{ opacity: 0, y: -16, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.96 }}
-            transition={{ type: "spring", stiffness: 300, damping: 26 }}
-            style={{ pointerEvents: "auto" }}
-            className={`rounded-xl border px-4 py-3 text-sm shadow-2xl backdrop-blur-md w-full max-w-md text-center ${
-              item.tone === "success"
-                ? "border-success/40 bg-success/10 text-success"
-                : item.tone === "danger"
-                ? "border-danger/40 bg-danger/10 text-danger"
-                : "border-border-strong bg-bg-elevated/95 text-text-primary"
-            }`}
-          >
-            {item.message}
-          </motion.div>
-        ))}
-      </AnimatePresence>
+      {items.map((item) => (
+        <div
+          key={item.id}
+          role="status"
+          className={`pointer-events-auto flex min-h-11 max-w-md animate-[toast-in_0.45s_var(--ease-out)] items-center gap-2.5 rounded-full border-2 border-edge bg-ink px-4 py-2.5 text-[0.9375rem] font-medium text-ground shadow-sticker-sm transition-[opacity,transform] duration-300 ${
+            item.leaving ? "-translate-y-2 opacity-0" : ""
+          }`}
+        >
+          {item.tone === "success" ? (
+            <span aria-hidden className="grid h-5 w-5 place-items-center rounded-full bg-sun text-on-sun">
+              <Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.4} />
+            </span>
+          ) : item.tone === "danger" ? (
+            <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-accent" />
+          ) : null}
+          {item.message}
+        </div>
+      ))}
     </div>
   );
 
   return (
     <ToastCtx.Provider value={{ toast }}>
       {children}
-      {typeof document !== "undefined" && createPortal(layer, document.body)}
+      {mounted && createPortal(layer, document.body)}
     </ToastCtx.Provider>
   );
 }

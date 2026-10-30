@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <style>
+    .seal { fill: #bf351c; }
+    .cut { fill: #f3eee5; }
+    @media (prefers-color-scheme: dark) {
+      .seal { fill: #f0603f; }
+      .cut { fill: #131110; }
+    }
+  </style>
+  <rect class="seal" x="3" y="3" width="94" height="94" rx="19"/>
+  <g class="cut">
+    <rect x="18" y="17" width="38" height="8"/>
+    <rect x="15" y="33" width="44" height="8"/>
+    <rect x="24" y="17" width="8" height="35"/>
+    <rect x="41" y="17" width="8" height="35"/>
+    <rect x="65" y="21" width="7" height="24"/>
+    <rect x="78" y="14" width="8" height="40"/>
+    <rect x="72" y="47" width="14" height="7"/>
+    <rect x="30" y="63" width="40" height="8"/>
+    <rect x="46" y="57" width="8" height="27"/>
+    <rect x="15" y="79" width="70" height="8"/>
+  </g>
+</svg>

@@ -1,29 +1,38 @@
 "use client";
 
 import { useState, type KeyboardEvent } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { Icon } from "@/components/shared/Icon";
 import type { TemplateField } from "@/lib/types";
+import { useTagHue } from "../TagHues";
+
+/** Tags as the API stores them: lowercase, no #, single spaces. */
+function normalize(tag: string) {
+  return tag.trim().replace(/^#+/, "").replace(/\s+/g, " ").toLowerCase().slice(0, 40);
+}
 
 export function TagField({
   field,
   value,
   onChange,
   readOnly,
+  id,
 }: {
   field: TemplateField;
   value: string[];
   onChange: (v: string[]) => void;
   readOnly?: boolean;
+  id?: string;
 }) {
   const [draft, setDraft] = useState("");
+  const hueOf = useTagHue();
   const allowed = (field.config?.allowedTags as string[] | undefined) ?? [];
   const list = value ?? [];
 
   function add(tag: string) {
-    const t = tag.trim().toLowerCase();
+    const t = normalize(tag);
+    setDraft("");
     if (!t || list.includes(t)) return;
     onChange([...list, t]);
-    setDraft("");
   }
   function remove(tag: string) {
     onChange(list.filter((t) => t !== tag));
@@ -38,60 +47,61 @@ export function TagField({
     }
   }
 
+  if (readOnly) {
+    return list.length ? (
+      <ul className="flex flex-wrap gap-2">
+        {list.map((t) => (
+          <li key={t} data-hue={hueOf(t)} className="tag max-w-full">
+            <span className="truncate">#{t}</span>
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <p className="text-[0.9375rem] text-ink/65">No tags</p>
+    );
+  }
+
+  const suggestions = allowed.map(normalize).filter((t) => t && !list.includes(t));
+
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-1.5 bg-bg-elevated/40 border border-border rounded-lg px-2.5 py-2 min-h-[44px] focus-within:border-accent transition-colors">
-        <AnimatePresence>
-          {list.map((tag) => (
-            <motion.span
-              key={tag}
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              transition={{ duration: 0.15 }}
-              className="inline-flex items-center gap-1 rounded-md bg-accent/10 border border-accent/30 px-2 py-0.5 text-xs text-accent font-mono"
-            >
-              {tag}
-              {!readOnly && (
-                <button
-                  type="button"
-                  onClick={() => remove(tag)}
-                  className="text-accent/60 hover:text-accent text-[10px]"
-                  aria-label={`Remove ${tag}`}
-                >
-                  ✕
-                </button>
-              )}
-            </motion.span>
-          ))}
-        </AnimatePresence>
-        {!readOnly && (
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={onKey}
-            onBlur={() => draft && add(draft)}
-            placeholder={list.length ? "" : "Add a tag…"}
-            className="flex-1 min-w-[80px] bg-transparent border-0 px-1.5 py-0.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-0 focus:shadow-none"
-          />
-        )}
+    <div className="space-y-3">
+      <div className="control flex cursor-text flex-wrap items-center gap-2 !py-2 focus-within:shadow-[4px_4px_0_var(--accent)]">
+        {list.map((tag) => (
+          <button
+            key={tag}
+            type="button"
+            onClick={() => remove(tag)}
+            aria-label={`Remove #${tag}`}
+            className="chip chip-sm !min-h-9 !gap-1.5 !pl-2.5 !pr-2 max-sm:!min-h-11"
+          >
+            <span aria-hidden data-hue={hueOf(tag)} className="h-2.5 w-2.5 rounded-full border-[1.5px] border-edge bg-hue" />
+            #{tag}
+            <Icon name="close" className="h-3.5 w-3.5 opacity-60" strokeWidth={2} />
+          </button>
+        ))}
+        <input
+          id={id}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={onKey}
+          onBlur={() => draft && add(draft)}
+          placeholder={list.length ? "Add another" : "Type a tag and press Enter"}
+          enterKeyHint="done"
+          autoCapitalize="none"
+          autoComplete="off"
+          className="h-11 min-w-[10rem] flex-1 bg-transparent px-1 text-[0.9375rem] text-ink placeholder:text-ink/50 focus:outline-none"
+        />
       </div>
-      {!readOnly && allowed.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {allowed
-            .filter((t) => !list.includes(t))
-            .map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => add(t)}
-                className="text-xs text-text-secondary hover:text-text-primary border border-border hover:border-border-strong rounded-md px-2 py-0.5 transition-colors"
-              >
-                + {t}
-              </button>
-            ))}
+      {suggestions.length > 0 ? (
+        <div className="flex flex-wrap gap-2" aria-label="Suggested tags" role="group">
+          {suggestions.map((t) => (
+            <button key={t} type="button" onClick={() => add(t)} className="chip chip-sm max-sm:!min-h-11">
+              <Icon name="plus" className="h-3.5 w-3.5" strokeWidth={2} />
+              {t}
+            </button>
+          ))}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

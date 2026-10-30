@@ -1,13 +1,24 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
-import { FieldRenderer } from "./FieldRenderer";
+import { FieldRenderer, fieldInputId, isLabelable } from "./FieldRenderer";
+import { FieldPrompt } from "./FieldPrompt";
+import { AskCard, askDomId } from "./AskCard";
+import { PageOutline } from "./PageOutline";
+import { TagHues } from "./TagHues";
+import type { Ask } from "./asks";
+import { KataMark } from "@/components/shared/Avatar";
 import { Button } from "@/components/shared/Button";
+import { useCompanion } from "@/components/shared/Companion";
+import { Icon } from "@/components/shared/Icon";
+import { Seal } from "@/components/shared/Seal";
+import { Today } from "@/components/shared/Today";
 import { useToast } from "@/components/shared/Toast";
 import { countWords } from "@/lib/utils/streaks";
-import { formatLongDate } from "@/lib/utils/dates";
 import type {
   EntryField,
   FieldValue,
@@ -17,9 +28,38 @@ import type {
 
 interface EntryFormProps {
   template: Template;
+  /** Kata's questions for today, answered as kata:<tag>:<id> fields. */
+  asks?: Ask[];
+  /** Hues of tags that belong to a thread, so a tag wears its thread's colour. */
+  tagHues?: Record<string, number>;
   initialFields?: EntryField[];
   entryId?: string;
   date?: string;
+  weekday: string;
+  monthDay: string;
+  pageNumber: number;
+}
+
+const NUMBER_WORDS = ["No", "One", "Two", "Three"];
+// The writing column, and on wide screens the outline beside it. The save bar uses the same grid.
+const COLUMNS = "mx-auto w-full max-w-[46rem] px-margin xl:grid xl:max-w-[68rem] xl:grid-cols-[minmax(0,46rem)_17rem] xl:justify-center xl:gap-x-12";
+
+const filled = (v: FieldValue | undefined) =>
+  Array.isArray(v) ? v.length > 0 : typeof v === "string" ? v.trim().length > 0 : v !== null && v !== undefined;
+const cardId = (id: string) => `card-${id}`;
+
+function initialValues(template: Template, asks: Ask[], initialFields?: EntryField[]) {
+  const values = Object.fromEntries(
+    template.fields.map((f) => [
+      f.id,
+      valueForField(f, initialFields?.find((x) => x.fieldId === f.id)),
+    ])
+  ) as Record<string, FieldValue>;
+  for (const a of asks) {
+    const saved = initialFields?.find((x) => x.fieldId === a.fieldId)?.value;
+    values[a.fieldId] = typeof saved === "string" ? saved : "";
+  }
+  return values;
 }
 
 function valueForField(
@@ -44,41 +84,91 @@ function valueForField(
 
 export function EntryForm({
   template,
+  asks = [],
+  tagHues,
   initialFields,
   entryId,
   date,
+  weekday,
+  monthDay,
+  pageNumber,
 }: EntryFormProps) {
   const router = useRouter();
   const { toast } = useToast();
+  const { name } = useCompanion();
+  const reduce = useReducedMotion();
+  const serialize = (vals: Record<string, FieldValue>) =>
+    JSON.stringify({
+      date,
+      fields: [
+        ...template.fields.map<EntryField>((f) => ({
+          fieldId: f.id,
+          type: f.type,
+          label: f.label,
+          value: vals[f.id] ?? null,
+        })),
+        // Only answered questions are saved; each one files the page under its tag.
+        ...asks.flatMap<EntryField>((a) => {
+          const v = vals[a.fieldId];
+          return typeof v === "string" && v.trim()
+            ? [{ fieldId: a.fieldId, type: "long_text", label: a.text, value: v }]
+            : [];
+        }),
+      ],
+    });
   const [values, setValues] = useState<Record<string, FieldValue>>(() =>
-    Object.fromEntries(
-      template.fields.map((f) => [
-        f.id,
-        valueForField(f, initialFields?.find((x) => x.fieldId === f.id)),
-      ])
-    )
+    initialValues(template, asks, initialFields)
+  );
+  // Answered today on a page they've since switched from: the save keeps them, and they show here.
+  const earlier = (initialFields ?? []).filter(
+    (f) =>
+      !f.fieldId.startsWith("kata:") &&
+      !template.fields.some((t) => t.id === f.fieldId) &&
+      (Array.isArray(f.value) ? f.value.length > 0 : typeof f.value === "string" ? f.value.trim().length > 0 : f.value !== null)
+  );
+  // What the server has. Opening the page is not an edit, so an untouched page is never saved.
+  const [savedPayload, setSavedPayload] = useState(() =>
+    serialize(initialValues(template, asks, initialFields))
   );
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [sealed, setSealed] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSerialized = useRef<string>("");
+  // Kata's questions start open once answered.
+  const [openAsks, setOpenAsks] = useState<Set<string>>(
+    () => new Set(asks.filter((a) => filled(initialFields?.find((f) => f.fieldId === a.fieldId)?.value)).map((a) => a.fieldId))
+  );
+
+  const payload = serialize(values);
+  const dirty = payload !== savedPayload;
 
   const wordCount = useMemo(() => {
     let total = 0;
-    for (const f of template.fields) {
-      const v = values[f.id];
+    for (const v of Object.values(values)) {
       if (typeof v === "string") total += countWords(v);
     }
     return total;
-  }, [values, template.fields]);
-
-  const readMins = Math.max(1, Math.round(wordCount / 220));
+  }, [values]);
 
   function setValue(id: string, v: FieldValue) {
     setValues((prev) => ({ ...prev, [id]: v }));
   }
 
-  // auto-save every 10s when there are changes
+  // Maru wrote on today's page from the dock: add the same words here, so the next autosave
+  // keeps them alongside anything typed since the last save.
+  useEffect(() => {
+    const onWrite = (e: Event) => {
+      const { fieldId, text } = (e as CustomEvent<{ fieldId: string; text: string }>).detail;
+      setValues((prev) => {
+        const cur = prev[fieldId];
+        return { ...prev, [fieldId]: typeof cur === "string" && cur.trim() ? `${cur.trimEnd()}\n${text}` : text };
+      });
+    };
+    window.addEventListener("maru:page-write", onWrite);
+    return () => window.removeEventListener("maru:page-write", onWrite);
+  }, []);
+
+  // Auto-save ten seconds after the last change.
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -90,35 +180,36 @@ export function EntryForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [values]);
 
+  // Warn before leaving with words the server hasn't got yet.
+  useEffect(() => {
+    if (!dirty) return;
+    const onLeave = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", onLeave);
+    return () => window.removeEventListener("beforeunload", onLeave);
+  }, [dirty]);
+
   async function doSave(opts: { silent?: boolean; redirectAfter?: boolean } = {}) {
     if (saving) return;
-    const payload = {
-      date,
-      fields: template.fields.map<EntryField>((f) => ({
-        fieldId: f.id,
-        type: f.type,
-        label: f.label,
-        value: values[f.id] ?? null,
-      })),
-    };
-    const serialized = JSON.stringify(payload);
-    if (serialized === lastSerialized.current && opts.silent) return;
+    const serialized = payload;
+    if (serialized === savedPayload && opts.silent) return;
     setSaving(true);
     try {
       const res = await fetch("/api/entries", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: serialized,
+        // Your own save (not an autosave) is when Kata reads the page properly.
+        body: opts.silent ? serialized : JSON.stringify({ ...JSON.parse(serialized), final: true }),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(data.error ?? "Save failed");
       }
-      lastSerialized.current = serialized;
+      setSavedPayload(serialized);
       setSavedAt(Date.now());
-      if (!opts.silent) toast("Entry saved", "success");
+      if (!opts.silent) toast("Page saved", "success");
       if (opts.redirectAfter) {
-        setTimeout(() => router.push("/dashboard"), 600);
+        setSealed(true);
+        setTimeout(() => router.push("/dashboard"), 1100);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Save failed";
@@ -128,87 +219,204 @@ export function EntryForm({
     }
   }
 
+  function setAskOpen(fieldId: string, open: boolean) {
+    setOpenAsks((prev) => {
+      const next = new Set(prev);
+      if (open) next.add(fieldId);
+      else next.delete(fieldId);
+      return next;
+    });
+  }
+
+  /** From the outline: bring a prompt or question into view and put the caret in it. */
+  function jumpTo(id: string) {
+    const ask = asks.find((a) => a.fieldId === id);
+    if (ask) flushSync(() => setAskOpen(ask.fieldId, true));
+    const target = document.getElementById(ask ? askDomId(ask.fieldId) : cardId(id));
+    if (!target) return;
+    target.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+    target
+      .querySelector<HTMLElement>(ask ? "textarea" : 'textarea, input, [role="radio"][tabindex="0"], button')
+      ?.focus({ preventScroll: true });
+  }
+
+  const status = saving
+    ? "Saving…"
+    : dirty
+      ? "Unsaved changes"
+      : savedAt
+        ? `Saved at ${new Date(savedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+        : entryId
+          ? "Saved"
+          : "Not saved yet";
+
+  const outlineFields = template.fields
+    .filter((f) => f.type !== "divider")
+    .map((f) => ({ id: f.id, label: f.label, done: filled(values[f.id]) }));
+  const outlineAsks = asks.map((a) => ({ id: a.fieldId, label: `#${a.tag}`, hue: a.hue, done: filled(values[a.fieldId]) }));
+
   return (
-    <div className="relative max-w-[720px] mx-auto px-6 pt-12 pb-40">
-      {/* Top: paper-style page header */}
-      <div className="flex items-start justify-between mb-12 pb-6 border-b border-border">
-        <div>
-          <div className="flex items-center gap-3 text-[11px] uppercase tracking-[0.22em] text-text-muted font-mono">
-            <span className="numeral text-accent text-base not-italic">№</span>
-            <span>{entryId ? "Today's page · editing" : "Today's page · new"}</span>
-          </div>
-          <h1 className="font-serif italic text-5xl mt-3 leading-[1.05] tracking-tight">
-            {formatLongDate(new Date())}
-          </h1>
-        </div>
-        <button
-          onClick={() => router.push("/dashboard")}
-          className="text-text-muted hover:text-accent transition-colors text-sm font-mono uppercase tracking-[0.18em] mt-2"
-        >
-          ✕ exit
-        </button>
-      </div>
+    <TagHues hues={tagHues ?? {}}>
+      <div className={`${COLUMNS} pb-44 pt-[clamp(1.25rem,4vw,3rem)]`}>
+        <div className="min-w-0">
+          <header className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <span className="inline-flex -rotate-[3deg] items-center rounded-full border-2 border-edge bg-surface px-3 py-0.5 font-display text-[1.15rem] shadow-sticker-sm">
+                  Page {pageNumber.toLocaleString("en-US")}
+                </span>
+                {entryId ? <span className="text-[0.9375rem] font-medium text-ink/70">Started earlier today</span> : null}
+              </p>
+              <h1 className="mt-4 font-display text-display-l">
+                <span className="block">
+                  <Today initial={weekday} style="weekday" />,
+                </span>
+                <span className="mark">
+                  <Today initial={monthDay} style="monthDay" />
+                </span>
+              </h1>
+              <p className="mt-5 max-w-[34rem] text-lede text-ink/75">
+                Write what mattered. {name} reads the page when you save it and keeps track of what’s moving.
+              </p>
+            </div>
+            <Link
+              href="/dashboard"
+              onClick={() => dirty && void doSave({ silent: true })}
+              aria-label="Close today’s page"
+              className="chip !h-11 !w-11 !min-h-0 shrink-0 !px-0"
+            >
+              <Icon name="close" className="h-5 w-5" />
+            </Link>
+          </header>
 
-      {/* Saved indicator */}
-      <div className="absolute top-14 right-6 h-5">
-        {savedAt && (
-          <motion.div
-            key={savedAt}
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="flex items-center gap-1.5 text-[11px] text-success font-mono uppercase tracking-[0.22em]"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-success" />
-            Saved
-          </motion.div>
-        )}
-      </div>
-
-      {/* Fields */}
-      <div className="space-y-10">
-        {template.fields.map((field, idx) => (
-          <motion.div
-            key={field.id}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.22, delay: 0.05 * idx }}
-            className="space-y-3"
-          >
-            {field.type !== "divider" && (
-              <label className="block text-[12px] uppercase tracking-[0.18em] font-mono font-medium text-text-secondary">
-                {field.label}
-                {field.required && (
-                  <span className="text-accent ml-1.5">*</span>
-                )}
-              </label>
+          <div className="mt-10 grid grid-cols-1 gap-6">
+            {template.fields.map((field, idx) =>
+              field.type === "divider" ? (
+                <div key={field.id} className="pt-4">
+                  <FieldRenderer field={field} value={null} />
+                </div>
+              ) : (
+                <div
+                  key={field.id}
+                  id={cardId(field.id)}
+                  className="card appear p-5 [animation-delay:var(--delay)] motion-reduce:[animation-delay:0ms] has-[.writing:focus-visible]:shadow-[5px_5px_0_var(--accent)] sm:p-7"
+                  style={{ ["--delay" as string]: `${Math.min(idx, 6) * 50}ms` }}
+                >
+                  <FieldPrompt
+                    as={isLabelable(field) ? "label" : "p"}
+                    htmlFor={fieldInputId(field)}
+                    required={field.required}
+                  >
+                    {field.label}
+                  </FieldPrompt>
+                  <div className="mt-4">
+                    <FieldRenderer field={field} value={values[field.id]} onChange={(v) => setValue(field.id, v)} />
+                  </div>
+                </div>
+              )
             )}
-            <FieldRenderer
-              field={field}
-              value={values[field.id]}
-              onChange={(v) => setValue(field.id, v)}
-            />
-          </motion.div>
-        ))}
-      </div>
-
-      {/* Bottom bar */}
-      <div className="fixed bottom-0 left-0 right-0 md:left-64 z-20 bg-bg-base/90 backdrop-blur-md border-t border-border">
-        <div className="max-w-[720px] mx-auto px-6 py-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4 text-[11px] text-text-muted font-mono uppercase tracking-[0.22em]">
-            <span><span className="text-accent">{wordCount.toLocaleString()}</span> words</span>
-            <span>·</span>
-            <span>{readMins} min read</span>
           </div>
-          <Button
-            onClick={() => doSave({ redirectAfter: true })}
-            disabled={saving}
-          >
-            {saving ? "Saving…" : "Save entry"}
-          </Button>
+
+          {earlier.length > 0 ? (
+            <section aria-labelledby="earlier-today" className="mt-14">
+              <h2 id="earlier-today" className="font-display text-display-s">
+                Earlier today
+              </h2>
+              <p className="mt-1.5 max-w-[34rem] text-[0.9375rem] text-ink/70">
+                What you wrote on the page you used before switching. It stays with today’s page.
+              </p>
+              <ul className="mt-6 grid grid-cols-1 gap-4">
+                {earlier.map((f) => (
+                  <li key={f.fieldId} className="card p-5 sm:p-6">
+                    <p className="font-semibold">{f.label}</p>
+                    <div className="mt-2">
+                      <FieldRenderer field={{ id: f.fieldId, type: f.type, label: f.label, required: false, order: 0, config: {} }} value={f.value} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {asks.length > 0 ? (
+            <section aria-labelledby="kata-asks" className="mt-14">
+              <div className="flex items-center gap-3">
+                <KataMark size={40} cut="ground" />
+                <h2 id="kata-asks" className="font-display text-display-s">
+                  {name} also asks
+                </h2>
+              </div>
+              <p className="bubble-kata mt-4 w-fit max-w-[34rem] px-4 py-3 text-[0.9375rem] leading-snug">
+                {NUMBER_WORDS[asks.length] ?? asks.length} {asks.length === 1 ? "question" : "questions"} from me today.
+                Answer any you like: each answer files the page under its tag.
+              </p>
+              <ul className="mt-8 grid grid-cols-1 gap-6">
+                {asks.map((a, i) => (
+                  <AskCard
+                    key={a.fieldId}
+                    ask={a}
+                    index={i}
+                    value={(values[a.fieldId] as string) ?? ""}
+                    onChange={(v) => setValue(a.fieldId, v)}
+                    open={openAsks.has(a.fieldId)}
+                    onOpenChange={(o) => setAskOpen(a.fieldId, o)}
+                  />
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </div>
+
+        <aside className="max-xl:hidden">
+          <div className="sticky top-8">
+            <PageOutline fields={outlineFields} asks={outlineAsks} words={wordCount} onJump={jumpTo} />
+          </div>
+        </aside>
+
+        <AnimatePresence>
+          {sealed ? (
+            <motion.div
+              key="seal"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: reduce ? 0 : 0.3 }}
+              className="pointer-events-none fixed inset-0 z-40 grid place-items-center bg-ground/70 backdrop-blur-[2px] lg:left-[16.5rem]"
+            >
+              <motion.span
+                initial={reduce ? false : { opacity: 0, scale: 1.9, rotate: -32 }}
+                animate={{ opacity: 1, scale: 1, rotate: -8 }}
+                transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+                className="grid justify-items-center gap-4"
+              >
+                <Seal size={132} cut="ground" title="Sealed" />
+                <span className="font-display text-display-s">Page {pageNumber.toLocaleString("en-US")}, sealed</span>
+              </motion.span>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 lg:left-[16.5rem]">
+          <div className={`${COLUMNS} pb-[max(0.75rem,env(safe-area-inset-bottom))]`}>
+            <div className="pointer-events-auto flex items-center justify-between gap-3 rounded-full border-2 border-edge bg-surface py-1.5 pl-5 pr-1.5 shadow-sticker">
+              <p className="min-w-0 text-[0.875rem] leading-tight text-ink/70 sm:flex sm:items-baseline sm:gap-2">
+                <span className="block whitespace-nowrap">
+                  <span className="font-display text-[1.3rem] tabular-nums text-ink">{wordCount.toLocaleString("en-US")}</span>{" "}
+                  {wordCount === 1 ? "word" : "words"}
+                </span>
+                <span aria-hidden className="text-ink/35 max-sm:hidden">
+                  ·
+                </span>
+                <span aria-live="polite" className={`block truncate ${dirty ? "font-semibold text-ink" : ""}`}>
+                  {status}
+                </span>
+              </p>
+              <Button size="lg" onClick={() => doSave({ redirectAfter: true })} disabled={saving || sealed} className="shrink-0">
+                {sealed ? "Sealed" : saving ? "Saving…" : "Save & close"}
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </TagHues>
   );
 }

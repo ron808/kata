@@ -1,0 +1,98 @@
+/* Landing-only motion that has to run from first paint, before any script:
+   the hero's entrance and the small stamps. Scroll scenes are GSAP (Scenes.tsx).
+   Every animation here is one-shot; reduced motion turns each one off. */
+
+/* The marker swipe draws itself under the headline's key words. */
+.swipe::before {
+  transform-origin: 0 50%;
+  animation: swipe 0.7s var(--ease-out) 0.25s both;
+}
+
+/* On a dark page, chalk letters over marker yellow wash out: the swipe turns tomato
+   there, as in the sticker book's dark reference. */
+:global(:root[data-theme="dark"]) .marker::before {
+  background-color: var(--h0);
+}
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme="light"])) .marker::before {
+    background-color: var(--h0);
+  }
+}
+
+/* The seal is stamped at the end of the headline. */
+.stamp {
+  animation: stamp 0.55s var(--ease-out) 0.55s both;
+}
+
+/* Kata "typing" in a slot before its line lands there. Timing is set inline. */
+.typingSlot {
+  animation: typing-window 0.6s linear both;
+}
+
+/* A status (or a reaction) pressed onto a sticker. */
+.restamp {
+  animation: restamp 0.45s var(--ease-out) both;
+}
+
+/* The dark chapter is a cutting mat: a faint chalk dot grid under the stickers.
+   --mat is its colour, for a seal cut into it. */
+.mat {
+  --mat: var(--ground);
+  background-color: var(--mat);
+  background-image: radial-gradient(color-mix(in srgb, var(--ink) 10%, transparent) 1.2px, transparent 1.7px);
+  background-size: 22px 22px;
+  background-position: 11px 11px;
+}
+
+/* Chapters stay dark in the dark theme; lift them a step so they still read as a section. */
+:global(:root[data-theme="dark"]) .mat {
+  --mat: var(--surface);
+}
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme="light"])) .mat {
+    --mat: var(--surface);
+  }
+}
+
+@keyframes swipe {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes stamp {
+  from {
+    opacity: 0;
+    transform: scale(1.7) rotate(-16deg);
+  }
+}
+
+@keyframes typing-window {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  10%,
+  88% {
+    opacity: 1;
+  }
+}
+
+@keyframes restamp {
+  from {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .swipe::before,
+  .stamp,
+  .typingSlot,
+  .restamp {
+    animation: none;
+  }
+  .typingSlot {
+    display: none;
+  }
+}

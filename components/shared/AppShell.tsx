@@ -2,330 +2,376 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
-import { useSession, signOut } from "next-auth/react";
-import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { signOut } from "next-auth/react";
+import { useEffect, useRef, useState } from "react";
+import type { Names } from "@/lib/companion/naming";
+import { AskMaru } from "./AskMaru";
+import { Avatar } from "./Avatar";
+import { CompanionProvider } from "./Companion";
+import { Icon, type IconName } from "./Icon";
 import { Logo } from "./Logo";
+import { ThemeToggle } from "./ThemeToggle";
 
-const NAV = [
-  { href: "/dashboard", label: "Dashboard", numeral: "I" },
-  { href: "/entry/new", label: "Today's page", numeral: "II" },
-  { href: "/history", label: "History", numeral: "III" },
-  { href: "/digest/weekly", label: "Digests", numeral: "IV" },
-  { href: "/templates", label: "Gallery", numeral: "V" },
-  { href: "/settings", label: "Settings", numeral: "VI" },
+export interface ShellUser {
+  name: string;
+  email: string;
+  handle: string | null;
+  hue: number;
+  /** What they call their companion, and what it calls them. */
+  names: Names;
+}
+
+const NAV: { href: string; label: string; icon: IconName }[] = [
+  { href: "/dashboard", label: "Home", icon: "home" },
+  { href: "/people", label: "People", icon: "people" },
+  { href: "/messages", label: "Messages", icon: "chat" },
+  { href: "/threads", label: "Threads", icon: "threads" },
+  { href: "/history", label: "Pages", icon: "history" },
+  { href: "/breakdowns", label: "Breakdowns", icon: "chart" },
+  { href: "/digest/weekly", label: "Letters", icon: "letter" },
+  { href: "/templates", label: "Gallery", icon: "gallery" },
 ];
 
 function isActive(pathname: string, href: string) {
-  const isDigests = pathname.startsWith("/digest");
-  if (pathname === href) return true;
-  if (href === "/digest/weekly" && isDigests) return true;
-  if (
-    href !== "/dashboard" &&
-    href !== "/digest/weekly" &&
-    pathname.startsWith(href)
-  )
-    return true;
-  return false;
+  if (href === "/digest/weekly") return pathname.startsWith("/digest");
+  if (href === "/dashboard") return pathname === href;
+  if (href === "/people") return pathname === href || pathname.startsWith("/people/") || pathname.startsWith("/u/");
+  if (href === "/history") return pathname === href || (pathname.startsWith("/entry/") && pathname !== "/entry/new");
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  user,
+  unread,
+  messages: messagesAtLoad,
+  children,
+}: {
+  user: ShellUser;
+  unread: number;
+  /** Messages waiting, when the page loaded. */
+  messages: number;
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
-  const { data: session } = useSession();
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [lastPath, setLastPath] = useState(pathname);
-
-  // close mobile drawer on route change (React 19: sync via comparison-in-render)
-  if (pathname !== lastPath) {
-    setLastPath(pathname);
-    if (drawerOpen) setDrawerOpen(false);
-  }
-
-  // lock body scroll while drawer is open
+  const messages = useUnreadMessages(messagesAtLoad, pathname);
+  // Focus modes bring their own bottom bar, so the tab bar steps aside.
+  const writing = pathname.startsWith("/entry/new");
+  const focused = writing || pathname === "/settings/template";
+  // The companion's colour: on the shell for the first paint, on <html> for dialogs and toasts outside it.
+  const maru = user.names.hue ?? undefined;
   useEffect(() => {
-    if (!drawerOpen) return;
-    const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const html = document.documentElement;
+    if (maru) html.dataset.maru = String(maru);
+    else delete html.dataset.maru;
     return () => {
-      document.body.style.overflow = original;
+      delete html.dataset.maru;
     };
-  }, [drawerOpen]);
-
-  // ESC closes the drawer
-  useEffect(() => {
-    if (!drawerOpen) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setDrawerOpen(false);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [drawerOpen]);
-
-  const userInitial = session?.user?.name?.[0]?.toUpperCase() ?? "?";
-  const userName = session?.user?.name ?? "Guest";
-  const userEmail = session?.user?.email ?? "Sign in";
+  }, [maru]);
 
   return (
-    <div className="flex min-h-screen w-full">
-      {/* Skip to content (keyboard users) */}
-      <a
-        href="#main"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:px-3 focus:py-2 focus:bg-bg-elevated focus:text-text-primary focus:border focus:border-accent focus:rounded"
-      >
-        Skip to content
-      </a>
-
-      {/* Desktop sidebar */}
-      <aside className="hidden md:flex flex-col w-64 shrink-0 border-r border-border bg-bg-base sticky top-0 h-screen">
-        <div className="px-6 py-6">
-          <Link href="/dashboard" className="inline-flex">
-            <Logo />
-          </Link>
-          <p className="mt-2 text-[10.5px] uppercase tracking-[0.22em] text-text-muted font-mono">
-            volume one
-          </p>
-        </div>
-        <div className="rule-fine mx-6" />
-        <nav
-          aria-label="Primary"
-          className="flex-1 px-3 py-5 flex flex-col gap-px overflow-y-auto"
+    <CompanionProvider names={user.names}>
+      <div data-maru={maru} className="lg:grid lg:min-h-svh lg:grid-cols-[16.5rem_minmax(0,1fr)]">
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60] focus:rounded-full focus:bg-ink focus:px-4 focus:py-2.5 focus:text-ground"
         >
-          {NAV.map((item) => {
-            const active = isActive(pathname, item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={active ? "page" : undefined}
-                className={`group relative flex items-baseline gap-4 px-4 py-3 text-[15px] transition-colors ${
-                  active
-                    ? "text-accent"
-                    : "text-text-secondary hover:text-text-primary"
-                }`}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="activeMark"
-                    className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-5 bg-accent"
-                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                  />
-                )}
-                <span className="numeral text-base text-text-muted w-5 not-italic">
-                  {item.numeral}.
-                </span>
-                <span className={active ? "font-serif italic text-lg" : ""}>
-                  {item.label}
-                </span>
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="rule-fine mx-6" />
-        <div className="px-5 py-5 space-y-3">
-          <div className="flex items-center gap-3">
-            <div
-              aria-hidden
-              className="grid place-items-center w-9 h-9 border border-border-strong text-text-secondary text-[13px] font-mono shrink-0"
-            >
-              {userInitial}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm truncate font-serif italic text-base">
-                {userName}
-              </div>
-              <div className="text-[11px] text-text-muted truncate font-mono uppercase tracking-[0.18em]">
-                {userEmail}
-              </div>
-            </div>
+          Skip to content
+        </a>
+
+        {/* Desktop rail */}
+        <aside className="rule sticky top-0 hidden h-svh flex-col border-r-2 px-4 pb-4 lg:flex">
+          <div className="flex h-[var(--header-h)] items-center justify-between px-1">
+            <Link href="/dashboard" aria-label="Kata, home" className="flex min-h-11 items-center">
+              <Logo cut="ground" />
+            </Link>
+            <Bell unread={unread} active={pathname === "/notifications"} />
+          </div>
+          <nav aria-label="Primary" className="mt-4">
+            <ul className="space-y-1">
+              {NAV.map((item) => {
+                const active = isActive(pathname, item.href);
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      aria-current={active ? "page" : undefined}
+                      className={`flex h-11 items-center gap-3 rounded-full px-3.5 text-[0.9375rem] font-medium transition-colors duration-300 ${
+                        active
+                          ? "bg-sun text-on-sun shadow-[inset_0_0_0_2px_var(--edge)]"
+                          : "text-ink/70 hover:bg-ink/[0.06] hover:text-ink"
+                      }`}
+                    >
+                      <Icon name={item.icon} className="h-5 w-5" />
+                      {item.label}
+                      {item.href === "/messages" && messages ? (
+                        <span
+                          aria-label={`${messages} new`}
+                          className="ml-auto grid h-6 min-w-6 place-items-center rounded-full border-2 border-edge bg-accent px-1.5 text-[0.75rem] font-bold leading-none text-on-accent tabular-nums"
+                        >
+                          {messages > 9 ? "9+" : messages}
+                        </span>
+                      ) : null}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+          <Link
+            href="/entry/new"
+            aria-current={writing ? "page" : undefined}
+            className="press mt-6 flex h-12 items-center justify-center gap-2.5 rounded-full border-2 border-edge bg-accent px-4 font-semibold text-on-accent transition-[transform,box-shadow] duration-300"
+          >
+            <Icon name="pen" className="h-[1.1rem] w-[1.1rem]" />
+            Write today’s page
+          </Link>
+          <div className="mt-auto">
+            <AccountMenu user={user} pathname={pathname} placement="up" />
+          </div>
+        </aside>
+
+        {/* Compact top bar */}
+        <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 bg-ground/92 px-margin backdrop-blur-md lg:hidden">
+          <Link href="/dashboard" aria-label="Kata, home" className="-mx-1 flex min-h-11 items-center px-1">
+            <Logo cut="ground" />
+          </Link>
+          <div className="flex items-center gap-1.5">
+            <Inbox unread={messages} active={pathname.startsWith("/messages")} />
+            <Bell unread={unread} active={pathname === "/notifications"} />
+            <AccountMenu user={user} pathname={pathname} placement="down" compact />
+          </div>
+        </header>
+
+        <main id="main" className={`min-w-0 ${focused ? "" : "max-lg:pb-[calc(5rem+env(safe-area-inset-bottom))]"}`}>
+          {/* Opacity only: a transform here would trap the fixed save bar on today's page. */}
+          <motion.div
+            key={pathname}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {children}
+          </motion.div>
+        </main>
+
+        <AskMaru pathname={pathname} />
+
+        {/* Compact tab bar; hidden in focus modes, which have their own save bar. */}
+        {!focused ? (
+          <nav
+            aria-label="Primary"
+            className="rule fixed inset-x-0 bottom-0 z-30 border-t-2 bg-ground/94 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden"
+          >
+            <ul className="mx-auto grid h-[4.25rem] max-w-lg grid-cols-5 items-center px-2">
+              {["/dashboard", "/people", null, "/threads", "/history"].map((href) => (href ? NAV.find((n) => n.href === href)! : null)).map((item) =>
+                item ? (
+                  <li key={item.href} className="flex justify-center">
+                    <Link
+                      href={item.href}
+                      aria-current={isActive(pathname, item.href) ? "page" : undefined}
+                      className={`flex h-14 min-w-14 flex-col items-center justify-center gap-1 rounded-md text-[0.75rem] font-semibold transition-colors ${
+                        isActive(pathname, item.href) ? "text-ink" : "text-ink/60"
+                      }`}
+                    >
+                      <span
+                        className={`grid h-8 w-12 place-items-center rounded-full transition-colors ${
+                          isActive(pathname, item.href) ? "bg-sun text-on-sun shadow-[inset_0_0_0_2px_var(--edge)]" : ""
+                        }`}
+                      >
+                        <Icon name={item.icon} className="h-[1.3rem] w-[1.3rem]" />
+                      </span>
+                      {item.label}
+                    </Link>
+                  </li>
+                ) : (
+                  <li key="today" className="flex justify-center">
+                    <Link
+                      href="/entry/new"
+                      aria-label="Write today’s page"
+                      className="press grid h-13 w-13 place-items-center rounded-full border-2 border-edge bg-accent text-on-accent transition-[transform,box-shadow] duration-300"
+                    >
+                      <Icon name="plus" className="h-6 w-6" strokeWidth={2.2} />
+                    </Link>
+                  </li>
+                )
+              )}
+            </ul>
+          </nav>
+        ) : null}
+      </div>
+    </CompanionProvider>
+  );
+}
+
+/** Messages waiting: from the page load, then checked every so often and on every page change. */
+function useUnreadMessages(atLoad: number, pathname: string): number {
+  const [count, setCount] = useState(atLoad);
+  const [seen, setSeen] = useState(atLoad);
+  if (atLoad !== seen) {
+    setSeen(atLoad);
+    setCount(atLoad);
+  }
+  useEffect(() => {
+    let live = true;
+    const check = async () => {
+      if (document.visibilityState !== "visible") return;
+      const res = await fetch("/api/messages/unread", { cache: "no-store" }).catch(() => null);
+      if (!res?.ok || !live) return;
+      const data = (await res.json()) as { unread: number };
+      if (live) setCount(data.unread);
+    };
+    void check();
+    const id = window.setInterval(check, 30_000);
+    return () => {
+      live = false;
+      window.clearInterval(id);
+    };
+  }, [pathname]);
+  return count;
+}
+
+/** Messages, beside the bell on a phone (the tab bar has no room). */
+function Inbox({ unread, active }: { unread: number; active: boolean }) {
+  return (
+    <Link
+      href="/messages"
+      aria-current={active ? "page" : undefined}
+      aria-label={unread ? `Messages, ${unread} new` : "Messages"}
+      className="chip relative !h-11 !w-11 !min-h-0 !px-0"
+    >
+      <Icon name="chat" className="h-5 w-5" />
+      {unread ? (
+        <span className="absolute -right-1.5 -top-1.5 grid h-[1.375rem] min-w-[1.375rem] place-items-center rounded-full border-2 border-edge bg-accent px-1 text-[0.75rem] font-bold leading-none text-on-accent tabular-nums">
+          {unread > 9 ? "9+" : unread}
+        </span>
+      ) : null}
+    </Link>
+  );
+}
+
+function Bell({ unread, active }: { unread: number; active: boolean }) {
+  return (
+    <Link
+      href="/notifications"
+      aria-current={active ? "page" : undefined}
+      aria-label={unread ? `Notifications, ${unread} new` : "Notifications"}
+      className="chip relative !h-11 !w-11 !min-h-0 !px-0"
+    >
+      <Icon name="bell" className="h-5 w-5" />
+      {unread ? (
+        <span className="absolute -right-1.5 -top-1.5 grid h-[1.375rem] min-w-[1.375rem] place-items-center rounded-full border-2 border-edge bg-accent px-1 text-[0.75rem] font-bold leading-none text-on-accent tabular-nums">
+          {unread > 9 ? "9+" : unread}
+        </span>
+      ) : null}
+    </Link>
+  );
+}
+
+function AccountMenu({
+  user,
+  pathname,
+  placement,
+  compact = false,
+}: {
+  user: ShellUser;
+  pathname: string;
+  placement: "up" | "down";
+  compact?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [lastPath, setLastPath] = useState(pathname);
+  const root = useRef<HTMLDivElement | null>(null);
+  const menuId = compact ? "account-menu-compact" : "account-menu";
+
+  // Close on navigation (React 19: sync via comparison-in-render).
+  if (pathname !== lastPath) {
+    setLastPath(pathname);
+    if (open) setOpen(false);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const onDown = (e: PointerEvent) => {
+      if (!root.current?.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onDown);
+    };
+  }, [open]);
+
+  const profileHref = user.handle ? `/u/${user.handle}` : "/settings#profile";
+  const items: { href: string; label: string; icon: IconName }[] = [
+    { href: profileHref, label: "Your profile", icon: "user" },
+    ...(compact
+      ? ([
+          { href: "/breakdowns", label: "Breakdowns", icon: "chart" },
+          { href: "/digest/weekly", label: "Letters", icon: "letter" },
+          { href: "/templates", label: "Gallery", icon: "gallery" },
+        ] as const)
+      : []),
+    { href: "/settings", label: "Settings", icon: "settings" },
+    { href: "/lab", label: "The Lab", icon: "flask" },
+  ];
+
+  return (
+    <div ref={root} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        aria-label="Account"
+        className={
+          compact
+            ? "grid h-11 w-11 place-items-center rounded-full"
+            : "flex w-full items-center gap-3 rounded-full p-1.5 pr-3 text-left transition-colors hover:bg-ink/[0.06]"
+        }
+      >
+        <Avatar name={user.name} hue={user.hue} size={compact ? 38 : 40} />
+        {compact ? null : (
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[0.9375rem] font-semibold">{user.name}</span>
+            <span className="block truncate text-sm text-ink/65">{user.handle ? `@${user.handle}` : "Choose a handle"}</span>
+          </span>
+        )}
+        {compact ? null : <Icon name="arrow-down" className={`h-4 w-4 text-ink/60 transition-transform ${open ? "" : "rotate-180"}`} />}
+      </button>
+      {open ? (
+        <div
+          id={menuId}
+          className={`card absolute z-40 w-[min(18rem,calc(100vw-2rem))] p-2 ${
+            placement === "up" ? "bottom-[calc(100%+0.75rem)] left-0" : "right-0 top-[calc(100%+0.75rem)]"
+          }`}
+        >
+          <div className="px-3 py-2.5">
+            <p className="truncate font-semibold">{user.name}</p>
+            <p className="truncate text-sm text-ink/65">{user.email}</p>
+          </div>
+          <div className="rule my-1 border-t-2" />
+          {items.map((item) => (
+            <Link key={item.href} href={item.href} className="flex h-11 items-center gap-3 rounded-full px-3 font-medium hover:bg-ink/[0.06]">
+              <Icon name={item.icon} className="h-5 w-5 text-ink/70" />
+              {item.label}
+            </Link>
+          ))}
+          <div className="px-1 py-2">
+            <ThemeToggle className="w-full" />
           </div>
           <button
             type="button"
             onClick={() => signOut({ callbackUrl: "/" })}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-border hover:border-accent hover:text-accent text-text-secondary text-[12px] uppercase tracking-[0.18em] font-mono transition-colors"
+            className="flex h-11 w-full items-center gap-3 rounded-full px-3 text-left font-medium hover:bg-ink/[0.06]"
           >
-            <svg
-              aria-hidden
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="w-4 h-4"
-            >
-              <path d="M15 17l5-5-5-5" />
-              <path d="M20 12H9" />
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-            </svg>
+            <Icon name="signout" className="h-5 w-5 text-ink/70" />
             Sign out
           </button>
         </div>
-      </aside>
-
-      {/* Mobile top bar */}
-      <header className="md:hidden fixed top-0 left-0 right-0 z-30 h-14 border-b border-border bg-bg-base/85 backdrop-blur-md">
-        <div className="h-full flex items-center justify-between px-4">
-          <button
-            type="button"
-            onClick={() => setDrawerOpen(true)}
-            aria-label="Open menu"
-            aria-expanded={drawerOpen}
-            aria-controls="mobile-drawer"
-            className="grid place-items-center w-10 h-10 -ml-2 text-text-secondary hover:text-accent transition-colors"
-          >
-            <svg
-              aria-hidden
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              className="w-5 h-5"
-            >
-              <path d="M4 7h16" />
-              <path d="M4 12h16" />
-              <path d="M4 17h16" />
-            </svg>
-          </button>
-          <Link href="/dashboard" className="inline-flex">
-            <Logo />
-          </Link>
-          <Link
-            href="/entry/new"
-            className="text-accent hover:text-accent-hover font-serif italic text-base"
-          >
-            Today →
-          </Link>
-        </div>
-      </header>
-
-      {/* Mobile drawer */}
-      <AnimatePresence>
-        {drawerOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.18 }}
-              className="md:hidden fixed inset-0 z-40 bg-black/55"
-              onClick={() => setDrawerOpen(false)}
-              aria-hidden
-            />
-            <motion.aside
-              id="mobile-drawer"
-              role="dialog"
-              aria-modal="true"
-              aria-label="Navigation"
-              initial={{ x: "-100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "-100%" }}
-              transition={{ type: "spring", stiffness: 360, damping: 36 }}
-              className="md:hidden fixed top-0 left-0 bottom-0 z-50 w-[82%] max-w-[320px] bg-bg-base border-r border-border flex flex-col"
-            >
-              <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-                <Logo />
-                <button
-                  type="button"
-                  onClick={() => setDrawerOpen(false)}
-                  aria-label="Close menu"
-                  className="grid place-items-center w-10 h-10 -mr-2 text-text-secondary hover:text-accent transition-colors"
-                >
-                  <svg
-                    aria-hidden
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    className="w-5 h-5"
-                  >
-                    <path d="M6 6l12 12" />
-                    <path d="M18 6L6 18" />
-                  </svg>
-                </button>
-              </div>
-              <nav
-                aria-label="Primary"
-                className="flex-1 overflow-y-auto px-3 py-4 flex flex-col gap-px"
-              >
-                {NAV.map((item) => {
-                  const active = isActive(pathname, item.href);
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      aria-current={active ? "page" : undefined}
-                      className={`flex items-baseline gap-4 px-4 py-3 text-[15px] transition-colors ${
-                        active
-                          ? "text-accent"
-                          : "text-text-secondary hover:text-text-primary"
-                      }`}
-                    >
-                      <span className="numeral text-base text-text-muted w-5 not-italic">
-                        {item.numeral}.
-                      </span>
-                      <span className={active ? "font-serif italic text-lg" : ""}>
-                        {item.label}
-                      </span>
-                    </Link>
-                  );
-                })}
-              </nav>
-              <div className="border-t border-border px-5 py-4 space-y-3">
-                <div className="flex items-center gap-3">
-                  <div
-                    aria-hidden
-                    className="grid place-items-center w-9 h-9 border border-border-strong text-text-secondary text-[13px] font-mono shrink-0"
-                  >
-                    {userInitial}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm truncate font-serif italic text-base">
-                      {userName}
-                    </div>
-                    <div className="text-[11px] text-text-muted truncate font-mono uppercase tracking-[0.18em]">
-                      {userEmail}
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => signOut({ callbackUrl: "/" })}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-border hover:border-accent hover:text-accent text-text-secondary text-[12px] uppercase tracking-[0.18em] font-mono transition-colors"
-                >
-                  <svg
-                    aria-hidden
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="w-4 h-4"
-                  >
-                    <path d="M15 17l5-5-5-5" />
-                    <path d="M20 12H9" />
-                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                  </svg>
-                  Sign out
-                </button>
-              </div>
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
-
-      <main id="main" className="flex-1 min-w-0 pt-14 md:pt-0">
-        <motion.div
-          key={pathname}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-        >
-          {children}
-        </motion.div>
-      </main>
+      ) : null}
     </div>
   );
 }

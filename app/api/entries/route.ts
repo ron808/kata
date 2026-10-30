@@ -1,14 +1,15 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db/mongoose";
 import { Entry } from "@/lib/db/models/Entry";
-import { User } from "@/lib/db/models/User";
-import { EntriesQuerySchema, EntryUpsertSchema } from "@/lib/validation/schemas";
+import { EntriesQuerySchema } from "@/lib/validation/schemas";
 import { handleError, jsonError, requireUser } from "@/lib/api";
 import { checkLimit, clientIdentifier, limiters } from "@/lib/ratelimit/upstash";
-import { todayUtcMidnight, toUtcMidnight } from "@/lib/utils/dates";
-import { countWords, nextStreak } from "@/lib/utils/streaks";
+import { toUtcMidnight } from "@/lib/utils/dates";
+import { PageUpsertSchema } from "@/lib/companion/schemas";
+import { updateThreadsFromPage } from "@/lib/companion/pages";
+import { PageError, savePage } from "@/lib/entries/save";
 
-const MAX_WORDS = 5000;
+export const maxDuration = 60;
 
 export async function GET(request: Request) {
   try {
@@ -68,86 +69,33 @@ export async function POST(request: Request) {
     if (!limit.ok) return jsonError("Daily entry limit reached.", 429);
 
     const body = await request.json();
-    const data = EntryUpsertSchema.parse(body);
+    const data = PageUpsertSchema.parse(body);
 
-    const date = data.date ? toUtcMidnight(data.date) : todayUtcMidnight();
-    const today = todayUtcMidnight();
-    if (date.getTime() > today.getTime()) {
-      return jsonError("Cannot create an entry in the future.", 400);
+    let saved;
+    try {
+      saved = await savePage(session.user.id, { fields: data.fields, date: data.date });
+    } catch (err) {
+      if (err instanceof PageError) return jsonError(err.message, err.status);
+      throw err;
     }
 
-    const user = await User.findById(session.user.id).lean();
-    if (!user) return jsonError("User not found", 404);
-    if (!user.activeTemplateId)
-      return jsonError("No active template — finish onboarding first.", 400);
-
-    const wordCount = data.fields.reduce((sum, f) => {
-      if (typeof f.value === "string") return sum + countWords(f.value);
-      return sum;
-    }, 0);
-    if (wordCount > MAX_WORDS)
-      return jsonError(`Entry exceeds ${MAX_WORDS} words.`, 400);
-
-    const tags = Array.from(
-      new Set(
-        data.fields
-          .filter((f) => f.type === "tags" && Array.isArray(f.value))
-          .flatMap((f) => f.value as string[])
-          .map((t) => t.trim().toLowerCase())
-          .filter(Boolean)
-      )
-    ).slice(0, 30);
-
-    const existing = await Entry.findOne({
-      userId: session.user.id,
-      date,
-    });
-    const previousWordCount = existing?.wordCount ?? 0;
-
-    let entry;
-    if (existing) {
-      existing.fields = data.fields;
-      existing.wordCount = wordCount;
-      existing.tags = tags;
-      await existing.save();
-      entry = existing;
-    } else {
-      entry = await Entry.create({
-        userId: session.user.id,
-        templateId: user.activeTemplateId,
-        date,
-        fields: data.fields,
-        wordCount,
-        tags,
-      });
-    }
-
-    if (!existing) {
-      const newStreak = nextStreak(user.streak, user.lastEntryDate, date);
-      const newLongest = Math.max(user.longestStreak, newStreak);
-      await User.findByIdAndUpdate(session.user.id, {
-        $inc: { totalEntries: 1, totalWords: wordCount },
-        $set: {
-          streak: newStreak,
-          longestStreak: newLongest,
-          lastEntryDate: date,
-        },
-      });
-    } else {
-      const wordDelta = wordCount - previousWordCount;
-      if (wordDelta !== 0) {
-        await User.findByIdAndUpdate(session.user.id, {
-          $inc: { totalWords: wordDelta },
-        });
+    // Kata reads the page after the response is sent; a failure there never fails the save.
+    const page = { _id: saved._id, fields: data.fields };
+    const userId = session.user.id;
+    after(async () => {
+      try {
+        await updateThreadsFromPage(userId, page, saved.previousFields, { final: data.final === true });
+      } catch (err) {
+        console.error("companion:page", err);
       }
-    }
+    });
 
     return NextResponse.json({
-      _id: String(entry._id),
-      date: entry.date.toISOString(),
-      wordCount: entry.wordCount,
-      tags: entry.tags,
-      created: !existing,
+      _id: saved._id,
+      date: saved.date.toISOString(),
+      wordCount: saved.wordCount,
+      tags: saved.tags,
+      created: saved.created,
     });
   } catch (err) {
     return handleError(err);

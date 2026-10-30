@@ -1,7 +1,10 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { Icon } from "@/components/shared/Icon";
 import type { TemplateField } from "@/lib/types";
+import { radioKeys, tabStop } from "./radio";
+
+const VALUES = [true, false] as const;
 
 export function YesNoField({
   field,
@@ -14,32 +17,41 @@ export function YesNoField({
   onChange: (v: boolean) => void;
   readOnly?: boolean;
 }) {
-  const yesLabel = (field.config?.yesLabel as string) ?? "Yes";
-  const noLabel = (field.config?.noLabel as string) ?? "No";
+  const yesLabel = (field.config?.yesLabel as string) || "Yes";
+  const noLabel = (field.config?.noLabel as string) || "No";
+
+  if (readOnly) {
+    if (value == null) return <p className="text-[0.9375rem] text-ink/65">Not answered</p>;
+    return (
+      <p className="inline-flex min-h-10 items-center gap-2 rounded-full border-2 border-edge bg-sun px-4 font-semibold text-on-sun">
+        {value ? <Icon name="check" className="h-4 w-4" strokeWidth={2.4} /> : <Icon name="close" className="h-4 w-4" strokeWidth={2.4} />}
+        {value ? yesLabel : noLabel}
+      </p>
+    );
+  }
+
   return (
-    <div className="grid grid-cols-2 gap-2 max-w-md">
-      {[
-        { val: true, label: yesLabel, color: "success" },
-        { val: false, label: noLabel, color: "danger" },
-      ].map((b) => {
-        const active = value === b.val;
+    <div
+      role="radiogroup"
+      aria-label={field.label}
+      onKeyDown={radioKeys(VALUES, value, onChange)}
+      className="flex flex-wrap gap-3"
+    >
+      {VALUES.map((v, i) => {
+        const on = value === v;
         return (
-          <motion.button
-            key={String(b.val)}
+          <button
+            key={String(v)}
             type="button"
-            disabled={readOnly}
-            onClick={() => onChange(b.val)}
-            whileTap={{ scale: 0.97 }}
-            className={`rounded-xl py-3 font-medium transition-all ${
-              active
-                ? b.color === "success"
-                  ? "bg-success/10 border border-success/50 text-success"
-                  : "bg-danger/10 border border-danger/50 text-danger"
-                : "bg-bg-elevated/40 border border-border text-text-secondary hover:text-text-primary hover:border-border-strong"
-            }`}
+            role="radio"
+            aria-checked={on}
+            tabIndex={tabStop(on, i, value != null)}
+            onClick={() => onChange(v)}
+            className="chip min-w-24"
           >
-            {b.label}
-          </motion.button>
+            {on ? <Icon name="check" className="h-4 w-4" strokeWidth={2.4} /> : null}
+            {v ? yesLabel : noLabel}
+          </button>
         );
       })}
     </div>

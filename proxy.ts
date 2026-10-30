@@ -8,6 +8,12 @@ const PROTECTED = [
   "/digest",
   "/settings",
   "/onboarding",
+  "/people",
+  "/u",
+  "/threads",
+  "/notifications",
+  "/templates",
+  "/lab",
 ];
 
 export default auth((req) => {
