@@ -69,7 +69,7 @@ Reuse these before writing new markup: `Button` / `buttonClass`, `AppPage` + `Pa
 
 ## Layout and copy
 
-- Gutter `px-margin`; signed-in pages sit in `AppPage`. `AppShell` gives a desktop rail and, below `lg`, a top bar and a bottom tab bar. Touch targets are at least 44px. Single-column grids use `grid-cols-1` so wide children can't widen the page. No horizontal scroll at any width.
+- Gutter `px-margin`; signed-in pages sit in `AppPage`. A new signed-in route also goes in `PROTECTED` in `proxy.ts`: pages read `session!`, and the layout's redirect doesn't stop them rendering. `AppShell` gives a desktop rail and, below `lg`, a top bar and a bottom tab bar. Touch targets are at least 44px. Single-column grids use `grid-cols-1` so wide children can't widen the page. No horizontal scroll at any width.
 - Copy is short, specific and true, in sentence case, no exclamation marks. No invented proof (users, quotes, counts) on public pages; demo content is labelled as an example.
 - Kata is for anyone's days, not only people at desks: don't write copy that assumes a job, a project, children or a partner.
 

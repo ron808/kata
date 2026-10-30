@@ -14,6 +14,8 @@ const PROTECTED = [
   "/notifications",
   "/templates",
   "/lab",
+  "/breakdowns",
+  "/messages",
 ];
 
 export default auth((req) => {
