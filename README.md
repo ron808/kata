@@ -36,7 +36,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Cron
 
-`vercel.json` schedules `POST /api/digests/generate` daily at 12:00 UTC. The handler picks weekly (every Sunday) or monthly (first of month) work based on the current UTC date. Force a run from the CLI:
+`vercel.json` schedules `GET /api/digests/generate` daily at 12:00 UTC. The handler picks weekly (every Sunday) or monthly (first of month) work based on the current UTC date. Force a run from the CLI:
 
 ```bash
 curl -X POST $URL/api/digests/generate \

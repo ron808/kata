@@ -34,7 +34,13 @@ export async function connectDB() {
       maxIdleTimeMS: 30_000,
     });
   }
-  cached.conn = await cached.promise;
+  try {
+    cached.conn = await cached.promise;
+  } catch (err) {
+    // Keeping a failed attempt would stop this instance ever reconnecting.
+    cached.promise = null;
+    throw err;
+  }
   return cached.conn;
 }
 

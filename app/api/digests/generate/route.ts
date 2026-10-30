@@ -125,3 +125,6 @@ export async function POST(request: Request) {
     return handleError(err);
   }
 }
+
+// Vercel's cron calls with GET. It also keeps a free Atlas cluster from pausing for inactivity.
+export const GET = POST;
