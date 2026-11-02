@@ -42,7 +42,7 @@ export function Hero() {
               See how it works
             </a>
           </div>
-          <p className="mt-4 text-sm text-ink/65">Free. Your pages stay private.</p>
+          <p className="mt-4 text-sm text-ink/65">Free. No one else on Kata sees your pages.</p>
         </div>
 
         {/* Top room for the sticker on the card's corner, clear of the fixed header. */}

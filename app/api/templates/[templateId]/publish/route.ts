@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import { connectDB } from "@/lib/db/mongoose";
 import { Template } from "@/lib/db/models/Template";
 import { handleError, jsonError, requireUser } from "@/lib/api";
+import { handleOf } from "@/lib/social/handles";
 
 function slugify(name: string): string {
   return name
@@ -35,6 +36,9 @@ export async function POST(
 
     const body = (await request.json().catch(() => null)) as { credit?: unknown } | null;
     if (typeof body?.credit === "boolean") {
+      if (body.credit && !(await handleOf(session.user.id))) {
+        return jsonError("Pick a handle in Settings first, so people can find you.", 403);
+      }
       template.credit = body.credit;
       await template.save();
       return NextResponse.json({ isPublished: template.isPublished, credit: template.credit });

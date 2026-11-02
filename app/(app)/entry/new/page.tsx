@@ -5,6 +5,7 @@ import { Thread } from "@/lib/db/models/Thread";
 import { contextFor, type EngineCtx } from "@/lib/companion/engine";
 import { ensurePage } from "@/lib/templates/mine";
 import { pageState, questionsFor } from "@/lib/companion/load";
+import { isDayOff } from "@/lib/questions/daily";
 import { addDays, dayToDate } from "@/lib/companion/time";
 import { formatDate } from "@/lib/utils/dates";
 import { EntryForm } from "@/components/entry/EntryForm";
@@ -54,6 +55,7 @@ export default async function NewEntryPage({ searchParams }: { searchParams: Pro
   let day = "";
   let past = false;
   let hour = 12;
+  let offDay = false;
   let other: { href: string; label: string } | null = null;
 
   try {
@@ -63,6 +65,7 @@ export default async function NewEntryPage({ searchParams }: { searchParams: Pro
     const yesterday = addDays(ctx.day, -1);
     day = asked === "today" ? ctx.day : asked === "yesterday" ? yesterday : page.day;
     past = day !== ctx.day;
+    offDay = isDayOff(ctx.user.role, day);
     other = past
       ? { href: "/entry/new?day=today", label: "Write about today instead" }
       : page.yesterdayBlank
@@ -128,6 +131,7 @@ export default async function NewEntryPage({ searchParams }: { searchParams: Pro
       date={day}
       past={past}
       hour={hour}
+      offDay={offDay}
       other={other}
       weekday={formatDate(dayToDate(day), "weekday", "UTC")}
       monthDay={formatDate(dayToDate(day), "monthDay", "UTC")}

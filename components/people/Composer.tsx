@@ -148,7 +148,7 @@ export function Composer({
           <h2 id={`${id}-heading`} className="font-display text-display-s">
             Share something
           </h2>
-          <p className="mt-1 text-[0.875rem] text-ink/65">Your pages stay private. Only what you post here is seen.</p>
+          <p className="mt-1 text-[0.875rem] text-ink/65">No one else on Kata sees your pages. Only what you post here is seen.</p>
         </div>
       </div>
 

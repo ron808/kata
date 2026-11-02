@@ -139,7 +139,7 @@ export function AppShell({
             className="press mt-6 flex h-12 items-center justify-center gap-2.5 rounded-full border-2 border-edge bg-accent px-4 font-semibold text-on-accent transition-[transform,box-shadow] duration-300"
           >
             <Icon name="pen" className="h-[1.1rem] w-[1.1rem]" />
-            Write your page
+            Your page
           </Link>
           <div className="mt-auto">
             <AccountMenu user={user} pathname={pathname} placement="up" />
@@ -203,7 +203,7 @@ export function AppShell({
                   <li key="today" className="flex justify-center">
                     <Link
                       href="/entry/new"
-                      aria-label="Write your page"
+                      aria-label="Your page"
                       className="press grid h-13 w-13 place-items-center rounded-full border-2 border-edge bg-accent text-on-accent transition-[transform,box-shadow] duration-300"
                     >
                       <Icon name="plus" className="h-6 w-6" strokeWidth={2.2} />

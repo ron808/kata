@@ -6,6 +6,8 @@ export const HANDLE_PATTERN = /^[a-z0-9_]{3,24}$/;
 
 export const HANDLE_TAKEN = "That handle is taken.";
 export const NEEDS_HANDLE = "Choose a handle first.";
+/** The same, where the writer needs telling why and where. */
+export const NEEDS_PROFILE = "Pick a handle in Settings first, so there's a profile to show it on.";
 
 export const RESERVED_HANDLES: ReadonlySet<string> = new Set([
   // Top-level routes in app/.

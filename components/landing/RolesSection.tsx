@@ -27,10 +27,6 @@ const LOOK: Partial<Record<RoleKey, { hue: number; tilt: number }>> = {
 
 const STARTERS = ROLE_PRESETS.filter((r) => r.key in LOOK);
 
-/** "Job Seeker" → "Job seeker"; acronyms like CEO stay. */
-const sentence = (name: string) =>
-  name.replace(/(\s)(\w+)/g, (all, gap: string, word: string) => (word === word.toUpperCase() ? all : gap + word.toLowerCase()));
-
 /** The role starters as a sheet of stickers: each one a page people start from. */
 export function RolesSection() {
   return (
@@ -66,7 +62,7 @@ export function RolesSection() {
                   <article aria-labelledby={`role-${role.key}`} className="card flex h-full flex-col">
                     <div className="rounded-t-[22px] border-b-2 border-edge bg-hue px-5 pb-5 pt-5 text-on-hue">
                       <h3 id={`role-${role.key}`} className="font-display text-display-s">
-                        {sentence(role.name)}
+                        {role.name}
                       </h3>
                       <p className="mt-2 text-[0.9375rem] font-medium leading-snug">{role.description}</p>
                     </div>

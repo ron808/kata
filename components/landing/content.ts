@@ -193,7 +193,7 @@ export const REACTIONS: { kind: ReactionKind; label: string }[] = [
 ];
 
 export const MOMENTS = [
-  { id: "m1", who: "mira", kind: "Shipped", when: "2h", tag: "design", text: "The new onboarding is live. Three screens instead of nine." },
+  { id: "m1", who: "mira", kind: "Finished", when: "2h", tag: "design", text: "The new onboarding is live. Three screens instead of nine." },
   { id: "m2", who: "priya", kind: "Win", when: "5h", tag: "job-hunt", text: "Second interview at the place I actually want. Monday at ten." },
   { id: "m3", who: "kenji", kind: "Thought", when: "1d", tag: "shipping", text: "Found the flaky test. It was the clock. It is always the clock." },
 ];

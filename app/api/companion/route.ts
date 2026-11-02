@@ -3,7 +3,7 @@ import { jsonError, requireUser } from "@/lib/api";
 import { checkLimit, limiters } from "@/lib/ratelimit/upstash";
 import { isGroqConfigured } from "@/lib/ai/groq";
 import { answerFreely, asksSomething, breakDown, busy, choose, converse, goTo, type MaruExchange, type Seen } from "@/lib/companion/brain";
-import { answer, say } from "@/lib/companion/engine";
+import { answer, moodSaid, say } from "@/lib/companion/engine";
 import { companionError } from "@/lib/companion/http";
 import { loadCompanion } from "@/lib/companion/load";
 import { toKataMessage } from "@/lib/companion/messages";
@@ -30,6 +30,8 @@ export async function GET() {
 async function talk(userId: string, text: string, seen: Seen): Promise<MaruExchange> {
   const went = (await goTo(userId, text)) ?? (await breakDown(userId, text));
   if (went) return went;
+  const mood = await moodSaid(userId, text);
+  if (mood) return refreshing(mood);
   if (!isGroqConfigured()) return refreshing(await say(userId, text));
   try {
     return await converse(userId, text, seen);

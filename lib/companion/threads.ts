@@ -9,9 +9,9 @@ import {
 } from "@/lib/db/models/Thread";
 import type { ThreadT } from "@/lib/types";
 import type { KnownThread, ThreadCandidate } from "./extract";
-import { FIELDS_MAX, fieldKey, type FieldSpec } from "./fields";
+import { FIELDS_MAX, fieldKey, habitGap, type FieldSpec } from "./fields";
 import { isDuplicateKey } from "./messages";
-import { addDays, dateToDay, dayDiff, localDay } from "./time";
+import { dateToDay, dayDiff, localDay } from "./time";
 
 export interface Ctx {
   userId: string;
@@ -31,26 +31,28 @@ export function withLog(log: IThreadLog[], item: IThreadLog): IThreadLog[] {
   return [...log, item].slice(-LOG_CAP);
 }
 
-/** A habit's streak if it's still alive (done today or yesterday), else 0. */
-export function liveStreak(t: Pick<IThread, "kind" | "streak" | "lastTouchedAt">, ctx: Ctx): number {
+/** A habit's streak if it's still alive (done today, or within the rest it allows), else 0. */
+export function liveStreak(t: Pick<IThread, "kind" | "title" | "streak" | "lastTouchedAt">, ctx: Ctx): number {
   if (t.kind !== "habit" || t.streak <= 0) return 0;
-  const last = localDay(ctx.tz, t.lastTouchedAt);
-  return last === ctx.day || last === addDays(ctx.day, -1) ? t.streak : 0;
+  return dayDiff(ctx.day, localDay(ctx.tz, t.lastTouchedAt)) <= habitGap(t.title) ? t.streak : 0;
 }
 
 /**
- * A habit done today. For habits lastTouchedAt is the last day it was done, so
- * the streak stays honest. Null when today is already counted. Pass the whole
- * thread: the days it was done are kept from it, for breakdowns.
+ * A habit done on a day, today unless they say otherwise ("walked 30 min yesterday"). For habits
+ * lastTouchedAt is the last day it was done, so the streak stays honest. Null when that day is
+ * already counted. Pass the whole thread: the days it was done are kept from it, for breakdowns.
  */
-export function habitDone(t: Pick<IThread, "streak" | "lastTouchedAt" | "touchCount" | "doneDays">, ctx: Ctx) {
+export function habitDone(t: Pick<IThread, "title" | "streak" | "lastTouchedAt" | "touchCount" | "doneDays">, ctx: Ctx, day = ctx.day) {
   const last = t.streak > 0 ? localDay(ctx.tz, t.lastTouchedAt) : null;
-  if (last === ctx.day) return null;
+  if (last === day || (t.doneDays ?? []).includes(day)) return null;
+  // A day filled in late sits beside the run rather than at its end.
+  const late = last !== null && day < last;
+  const joins = last !== null && Math.abs(dayDiff(last, day)) <= habitGap(t.title);
   return {
-    streak: last === addDays(ctx.day, -1) ? t.streak + 1 : 1,
-    lastTouchedAt: ctx.now,
+    streak: joins ? t.streak + 1 : late ? t.streak : 1,
+    lastTouchedAt: late ? t.lastTouchedAt : new Date(ctx.now.getTime() - dayDiff(ctx.day, day) * DAY_MS),
     touchCount: t.touchCount + 1,
-    doneDays: [...(t.doneDays ?? []).filter((d) => d !== ctx.day), ctx.day].slice(-400),
+    doneDays: [...(t.doneDays ?? []), day].sort().slice(-400),
   };
 }
 
@@ -122,6 +124,7 @@ export function toThreadT(t: IThread, ctx: Ctx): ThreadT {
     streak: liveStreak(t, ctx),
     hue: t.hue ?? 0,
     shared: Boolean(t.shared),
+    archived: Boolean(t.archived),
     log: (t.log ?? []).map((l) => ({
       at: new Date(l.at).toISOString(),
       text: l.text,
@@ -165,6 +168,19 @@ export async function listThreads(ctx: Ctx, limit = 24): Promise<ThreadT[]> {
     )
     .slice(0, limit)
     .map((t) => toThreadT(t, ctx));
+}
+
+/** What's left out of listThreads, newest first, so nothing the writer keeps is out of reach: archived, and done a while ago. */
+export async function olderThreads(ctx: Ctx, limit = 100): Promise<ThreadT[]> {
+  const since = new Date(ctx.now.getTime() - 14 * DAY_MS);
+  const docs = await Thread.find({
+    userId: ctx.userId,
+    $or: [{ archived: true }, { status: "done", lastTouchedAt: { $lt: since } }],
+  })
+    .sort({ lastTouchedAt: -1 })
+    .limit(limit)
+    .lean<IThread[]>();
+  return docs.map((t) => toThreadT(t, ctx));
 }
 
 export async function knownThreads(userId: string): Promise<KnownThread[]> {

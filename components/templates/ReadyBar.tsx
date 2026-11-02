@@ -28,7 +28,7 @@ export function ReadyBar({ name, onDismiss }: { name: string; onDismiss: () => v
         </p>
         <div className="flex w-full items-center justify-end gap-1 sm:w-auto">
           <Link ref={link} href="/entry/new" className={buttonClass({ variant: "secondary", className: "flex-1 sm:flex-none" })}>
-            Write today’s page
+            Write your page
             <Icon name="arrow" className="h-4 w-4" />
           </Link>
           <button

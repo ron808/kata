@@ -114,7 +114,7 @@ export function YourPages({ pages }: { pages: OwnPageT[] }) {
               )}
               {p.active ? (
                 <Link href="/entry/new" className="link inline-flex min-h-11 items-center text-[0.875rem] font-semibold">
-                  Write today’s
+                  Write your page
                 </Link>
               ) : (
                 <button

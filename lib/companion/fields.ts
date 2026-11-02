@@ -119,6 +119,34 @@ export function specLabel(text: string): string {
 
 const amount = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
 
+const TIMES_A_WEEK = /\b(\d)\s*(?:x|times?)\s*(?:a|per)\s*week\b/i;
+const HOW_OFTEN = /\b(?:\d\s*(?:x|times?)\s*(?:a|per)\s*week|(?:twice|once) (?:a|per) week|every other day|weekly)\b/i;
+
+/** Days a habit can go without breaking its run: "Gym 3x a week" has rest days built in. Daily ones have none. */
+export function habitGap(title: string): number {
+  if (/\bevery other day\b/i.test(title)) return 2;
+  const said = TIMES_A_WEEK.exec(title);
+  const times = said ? Number(said[1]) : /\btwice (?:a|per) week\b/i.test(title) ? 2 : /\b(?:once (?:a|per) week|weekly)\b/i.test(title) ? 1 : 7;
+  return times >= 1 && times < 7 ? Math.ceil(7 / times) : 1;
+}
+
+/** A habit's run as it reads: "4-day streak", but "3x a week" has days between. */
+export const habitRun = (streak: number, title: string) => (habitGap(title) > 1 ? `${streak} in a row` : `${streak}-day streak`);
+
+/** A habit as said in a sentence, without how often: "Gym 3x a week" is "Gym". */
+export function habitName(title: string): string {
+  const bare = title
+    .replace(/[\s,:–-]*\b(?:\d\s*(?:x|times?)\s*(?:a|per)\s*(?:week|day)|every ?day|every other day|each day|every week|twice (?:a|per) week|once (?:a|per) week|daily|weekly)\b/gi, "")
+    .trim();
+  return bare || title;
+}
+
+/** A habit's title with how often they said it's meant, which models leave out: "Gym" from "the gym 3x a week". */
+export function withHowOften(title: string, said: string): string {
+  const often = HOW_OFTEN.exec(said)?.[0];
+  return often && habitGap(title) === 1 ? `${title} ${often.toLowerCase()}` : title;
+}
+
 /** What a sentence gives for the numbers a thread keeps: "walked 30 min" is Minutes 30. */
 export function valuesIn(said: string, fields: Pick<FieldSpec, "label" | "unit" | "type">[]): Record<string, number> {
   const found = fields.flatMap((f): [string, number][] => {

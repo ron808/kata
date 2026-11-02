@@ -1,4 +1,4 @@
-import { valueText } from "@/lib/companion/fields";
+import { habitGap, habitRun, valueText } from "@/lib/companion/fields";
 import { dayDiff, localDay, monthDayOf, weekdayOf } from "@/lib/companion/time";
 import type { ThreadStatus, ThreadT } from "@/lib/types";
 
@@ -75,8 +75,8 @@ export function threadMeta(t: ThreadT, today: string, tz: string): string {
     return `In ${d} days`;
   }
   if (t.kind === "habit") {
-    const alive = dayDiff(today, localDay(tz, new Date(t.lastTouchedAt))) <= 1 && t.streak > 1;
-    return `${alive ? `${t.streak}-day streak · ` : ""}${doneToday(t, today, tz) ? "Done today" : "Not yet today"}`;
+    const alive = dayDiff(today, localDay(tz, new Date(t.lastTouchedAt))) <= habitGap(t.title) && t.streak > 1;
+    return `${alive ? `${habitRun(t.streak, t.title)} · ` : ""}${doneToday(t, today, tz) ? "Done today" : "Not yet today"}`;
   }
   if (t.kind === "event") return "No date";
   return `Came up ${touchedPhrase(t.lastTouchedAt, today, tz).toLowerCase()}`;
@@ -100,5 +100,5 @@ export function metaWithToday(t: ThreadT, today: string, tz: string): string {
 
 /** Threads that belong on the map: what's still on your mind. */
 export function onYourMind(threads: ThreadT[], max = 6): ThreadT[] {
-  return threads.filter((t) => t.status !== "done" && t.status !== "paused").slice(0, max);
+  return threads.filter((t) => !t.archived && t.status !== "done" && t.status !== "paused").slice(0, max);
 }

@@ -183,6 +183,7 @@ export interface ThreadT {
   streak: number;
   hue: number;
   shared: boolean;
+  archived: boolean;
   log: { at: string; text: string; status: ThreadStatus | null; from: "you" | "kata" | "page" }[];
   fields: ThreadField[];
 }

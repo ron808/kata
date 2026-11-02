@@ -93,8 +93,8 @@ const OPEN_BY_ROLE: Record<RoleKey, string[]> = {
   founder: ["What has to happen this week?", "What's on your plate this week?"],
   freelancer: ["Which clients are you working with this week?", "What's on your plate this week?"],
   teacher: ["What are you teaching this week?", "What's on your plate this week?"],
-  healthcare: ["When are your shifts this week?", "What's on your plate this week?"],
-  shift_worker: ["When are your shifts this week?", "What's on your plate between shifts?"],
+  healthcare: ["What does work look like in the next few days?", "What's on your plate this week?"],
+  shift_worker: ["When's your next shift?", "What's on your plate between shifts?"],
   creative: ["What are you making at the moment?", "What's on your plate this week?"],
   job_seeker: ["Which applications are you working on this week?", "What's on your plate this week?"],
   student: ["What are you studying this week?", "What's due this week?"],
@@ -135,12 +135,12 @@ export const followUp = {
     pick([`Nice work on ${r}. Share it on your profile?`, `That's ${r} done. Want to share it on your profile?`], seed),
   shared: "Shared on your profile. What's next?",
   kept: "Kept here. What's next?",
-  habit: (streak: number, first: boolean, seed: number) =>
+  habit: (streak: number, first: boolean, seed: number, rests = false) =>
     streak <= 1
       ? first
         ? "Done. That's day one."
         : "Done."
-      : pick([`Done. That's ${count(streak)} days in a row.`, `Good. ${capFirst(count(streak))} in a row now.`], seed),
+      : pick([`Done. That's ${count(streak)}${rests ? "" : " days"} in a row.`, `Good. ${capFirst(count(streak))} in a row now.`], seed),
   wentWell: "Glad it went well. What's next?",
   rough: "Sorry it was rough. It's off your list now.",
   eventDone: "Noted. What's next?",

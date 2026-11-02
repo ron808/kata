@@ -33,12 +33,15 @@ export function PublishToggle({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ credit: !named }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error);
+      }
       setNamed(!named);
       toast(named ? "Your name is off it" : "Your name is on it in the gallery", "success");
       router.refresh();
-    } catch {
-      toast("Couldn’t change that. Try again.", "danger");
+    } catch (err) {
+      toast((err instanceof Error && err.message) || "Couldn’t change that. Try again.", "danger");
     } finally {
       setLoading(false);
     }
@@ -79,7 +82,7 @@ export function PublishToggle({
         {loading ? "Saving…" : isPublished ? "Take it down" : "Share it"}
       </Button>
       {isPublished ? (
-        <button type="button" role="switch" aria-checked={named} onClick={toggleCredit} disabled={loading} className="chip chip-sm basis-full justify-start sm:basis-auto">
+        <button type="button" role="switch" aria-checked={named} onClick={toggleCredit} disabled={loading} className="chip chip-sm basis-full justify-start whitespace-normal py-1.5 text-left sm:basis-auto">
           <Icon name={named ? "check" : "user"} className="h-4 w-4" />
           {named ? "Your name is on it: people can write to ask how it’s going" : "Put my name on it, so people can write to ask about it"}
         </button>

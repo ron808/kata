@@ -117,7 +117,7 @@ export const ROLE_PRESETS: RolePreset[] = [
   },
   {
     key: "job_seeker",
-    name: "Job Seeker",
+    name: "Job seeker",
     emoji: "✦",
     description: "Applications, responses, practice, and energy.",
     fields: [
@@ -157,7 +157,7 @@ export const ROLE_PRESETS: RolePreset[] = [
     key: "freelancer",
     name: "Freelancer",
     emoji: "◇",
-    description: "Clients, deadlines and what you’re owed.",
+    description: "Clients, deadlines and the hours you put in.",
     fields: [
       {
         type: "long_text",
@@ -233,11 +233,11 @@ export const ROLE_PRESETS: RolePreset[] = [
     key: "healthcare",
     name: "Healthcare",
     emoji: "✚",
-    description: "Shifts, rest, and what you want to remember from them.",
+    description: "Work, rest and what you want to remember.",
     fields: [
       {
         type: "long_text",
-        label: "How was the shift?",
+        label: "How was work?",
         required: true,
         config: { placeholder: "What happened, how it felt…" },
       },
@@ -271,7 +271,7 @@ export const ROLE_PRESETS: RolePreset[] = [
     key: "shift_worker",
     name: "Shift work",
     emoji: "◷",
-    description: "A short page that fits around your shifts.",
+    description: "How the shift went, when the next one is and how you slept.",
     fields: [
       {
         type: "long_text",

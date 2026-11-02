@@ -512,6 +512,12 @@ function candidate(partial: Partial<ThreadCandidate> & { title: string; snippet:
   };
 }
 
+// A visit with a day is an event, whatever its subject: "dentist on Tuesday".
+const VISIT = /\b(?:dentist|doctor|gp|vet|check-?up|physio|optician|haircut|scan)\b/i;
+
+/** A day stays on anything but a habit, if it was named ahead: "worked on the thesis today" isn't a deadline. */
+const dated = (kind: ThreadKind, day: string | null, today?: string) => (day && (kind === "event" || (kind !== "habit" && day !== today)) ? dayToDate(day) : null);
+
 function fromHit(hit: Hit, sentence: string, opts: ExtractOptions): ThreadCandidate | null {
   const known = resolveKnown(hit.title, hit.aliases ?? [], opts.known ?? []);
   const day = parseDay(sentence, opts.today);
@@ -522,13 +528,13 @@ function fromHit(hit: Hit, sentence: string, opts: ExtractOptions): ThreadCandid
       status: hit.status ?? null,
       note: hit.note ?? "",
       snippet: sentence,
-      dueAt: known.kind === "event" && day ? dayToDate(day) : null,
+      dueAt: dated(known.kind, day, opts.today),
       threadId: known._id,
     });
   }
   // A thing that's already finished isn't worth starting to track.
   if (hit.status === "done" && hit.kind !== "habit") return null;
-  const kind = hit.kind ?? guessKind(hit.title);
+  const kind = hit.kind ?? (day && VISIT.test(hit.title) ? "event" : guessKind(hit.title));
   return candidate({
     title: hit.title,
     kind,
@@ -536,7 +542,7 @@ function fromHit(hit: Hit, sentence: string, opts: ExtractOptions): ThreadCandid
     note: hit.note ?? "",
     tags: hit.tags ?? [],
     snippet: sentence,
-    dueAt: kind === "event" && day ? dayToDate(day) : null,
+    dueAt: dated(kind, day, opts.today),
   });
 }
 
@@ -826,14 +832,14 @@ export function candidatesFromItems(items: string[], opts: ExtractOptions = {}):
     if (!title) continue;
     const k = resolveKnown(title, [], opts.known ?? []);
     const day = parseDay(item, opts.today);
-    const kind = k?.kind ?? guessKind(title);
+    const kind = k?.kind ?? (day && VISIT.test(title) ? "event" : guessKind(title));
     out.push(
       candidate({
         title: k?.title ?? title,
         kind,
         status: statusIn(item),
         snippet: raw.trim(),
-        dueAt: kind === "event" && day ? dayToDate(day) : null,
+        dueAt: dated(kind, day, opts.today),
         threadId: k?._id ?? null,
       })
     );

@@ -31,7 +31,7 @@ export const ROLES: { key: RoleKey; label: string; said: string; ack: string }[]
     key: "freelancer",
     label: "Freelancer",
     said: "I work for myself.",
-    ack: "Good. I’ll keep track of clients, deadlines and what you’re owed.",
+    ack: "Good. I’ll keep track of clients and deadlines, and ask who still owes you.",
   },
   {
     key: "teacher",
@@ -43,7 +43,7 @@ export const ROLES: { key: RoleKey; label: string; said: string; ack: string }[]
     key: "healthcare",
     label: "Healthcare",
     said: "I work in healthcare.",
-    ack: "Thank you for that work. I’ll keep track of your shifts, your rest and what you want to remember.",
+    ack: "Thank you for that work. I’ll keep track of your rest and what you want to remember.",
   },
   {
     key: "shift_worker",

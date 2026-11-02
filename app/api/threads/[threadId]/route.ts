@@ -5,6 +5,7 @@ import { checkLimit, limiters } from "@/lib/ratelimit/upstash";
 import { Thread, threadKey, type IThread } from "@/lib/db/models/Thread";
 import { contextFor } from "@/lib/companion/engine";
 import { companionError } from "@/lib/companion/http";
+import { NEEDS_PROFILE, handleOf } from "@/lib/social/handles";
 import { isDuplicateKey } from "@/lib/companion/messages";
 import { valueText } from "@/lib/companion/fields";
 import { ThreadPatchSchema } from "@/lib/companion/schemas";
@@ -40,6 +41,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ threadId:
     if (data.tags) set.tags = Array.from(new Set(data.tags.map((tag) => tag.toLowerCase())));
     if (data.nextStep !== undefined) set.nextStep = data.nextStep;
     if (data.dueAt !== undefined) set.dueAt = data.dueAt === null ? null : parseDueAt(data.dueAt, c.tz);
+    if (data.shared && !(await handleOf(c.userId))) return jsonError(NEEDS_PROFILE, 403);
     if (data.shared !== undefined) set.shared = data.shared;
     if (data.archived !== undefined) set.archived = data.archived;
 
@@ -79,7 +81,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ threadId:
       set.fields = fields;
       if (logged.length) {
         // Logging a habit today counts it as done. The numbers keep their own history, not the log.
-        const done = t.kind === "habit" && day === c.day ? habitDone(t, c) : null;
+        const done = t.kind === "habit" && dayDiff(c.day, day) <= 1 ? habitDone(t, c, day) : null;
         if (done) Object.assign(set, done);
         else if (t.kind !== "habit") Object.assign(set, touch(t, c));
       }

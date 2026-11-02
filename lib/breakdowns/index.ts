@@ -61,7 +61,8 @@ async function previousOf(ctx: Ctx, p: Period, upTo: string, joined: string): Pr
 export async function makeBreakdown(ctx: Ctx, p: Period, kind: BreakdownKind): Promise<IBreakdown> {
   const joined = joinDay(ctx);
   const upTo = sooner(p.to, ctx.day);
-  const counted = later(p.from, joined);
+  // A stretch from before they joined stays that stretch, with nothing in it.
+  const counted = joined > upTo ? p.from : later(p.from, joined);
   const [stats, previous, existing] = await Promise.all([
     gather(ctx.userId, ctx.tz, counted, upTo, ctx.day),
     previousOf(ctx, p, upTo, joined),

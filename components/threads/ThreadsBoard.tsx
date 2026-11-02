@@ -15,10 +15,15 @@ import { ThreadFields } from "./ThreadFields";
 
 const KINDS = Object.keys(KIND_LABEL) as ThreadKind[];
 
-const GROUPS: { title: string; test: (t: ThreadT) => boolean }[] = [
-  { title: "On your mind", test: (t) => t.status !== "done" && t.status !== "paused" },
-  { title: "Done lately", test: (t) => t.status === "done" },
-  { title: "Paused", test: (t) => t.status === "paused" },
+const RECENT_MS = 14 * 86_400_000;
+const lately = (t: ThreadT, today: string) => Date.parse(today) - Date.parse(t.lastTouchedAt) <= RECENT_MS;
+
+const GROUPS: { title: string; test: (t: ThreadT, today: string) => boolean }[] = [
+  { title: "On your mind", test: (t) => !t.archived && t.status !== "done" && t.status !== "paused" },
+  { title: "Done lately", test: (t, today) => !t.archived && t.status === "done" && lately(t, today) },
+  { title: "Paused", test: (t) => !t.archived && t.status === "paused" },
+  { title: "Done earlier", test: (t, today) => !t.archived && t.status === "done" && !lately(t, today) },
+  { title: "Archived", test: (t) => t.archived },
 ];
 
 /**
@@ -155,7 +160,7 @@ export function ThreadsBoard({
           </div>
         ) : null}
         {GROUPS.map((g) => {
-          const items = threads.filter(g.test);
+          const items = threads.filter((t) => g.test(t, today));
           if (!items.length) return null;
           return (
             <section key={g.title} aria-label={g.title} className="card p-2 sm:p-3">
@@ -185,7 +190,7 @@ export function ThreadsBoard({
                     </button>
                     {open === t._id ? (
                       <div id={`edit-${t._id}`} className="px-1 pb-3 sm:px-3">
-                        <ThreadEditor thread={t} today={today} tz={tz} onSaved={update} onRemoved={() => remove(t._id)} />
+                        <ThreadEditor thread={t} today={today} tz={tz} onSaved={update} onClose={() => select(null)} onRemoved={() => remove(t._id)} />
                       </div>
                     ) : null}
                   </li>
@@ -204,12 +209,14 @@ function ThreadEditor({
   today,
   tz,
   onSaved,
+  onClose,
   onRemoved,
 }: {
   thread: ThreadT;
   today: string;
   tz: string;
   onSaved: (t: ThreadT) => void;
+  onClose: () => void;
   onRemoved: () => void;
 }) {
   const { toast } = useToast();
@@ -401,9 +408,15 @@ function ThreadEditor({
           <Icon name={t.shared ? "check" : "eye"} className="h-4 w-4" />
           {t.shared ? "On your profile" : "Show on my profile"}
         </button>
-        <button type="button" className="chip chip-sm" disabled={busy} onClick={() => save({ archived: true }, `Archived. It comes back if you mention ${t.title} again.`).then((s) => s && onRemoved())}>
-          Archive
-        </button>
+        {t.archived ? (
+          <button type="button" className="chip chip-sm" disabled={busy} onClick={() => save({ archived: false }, `${t.title} is back`)}>
+            Bring back
+          </button>
+        ) : (
+          <button type="button" className="chip chip-sm" disabled={busy} onClick={() => save({ archived: true }, `Archived. It comes back if you mention ${t.title} again.`).then((s) => s && onClose())}>
+            Archive
+          </button>
+        )}
         <button type="button" className="chip chip-sm ml-auto !text-bad" disabled={busy} onClick={destroy} onBlur={() => setConfirming(false)}>
           <Icon name="trash" className="h-4 w-4" />
           {confirming ? "Press again to delete" : "Delete"}

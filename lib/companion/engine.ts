@@ -3,9 +3,10 @@ import { breakdownReceipt, ensureWeekly, toBreakdownT } from "@/lib/breakdowns";
 import { connectDB } from "@/lib/db/mongoose";
 import { CompanionMessage, type ICompanionMessage, type IQuickReply } from "@/lib/db/models/CompanionMessage";
 import { Entry, type IEntry } from "@/lib/db/models/Entry";
-import { Moment } from "@/lib/db/models/Moment";
 import { THREAD_STATUSES, Thread, type IThread, type ThreadStatus } from "@/lib/db/models/Thread";
 import { User, type IUser } from "@/lib/db/models/User";
+import { shareMoment } from "@/lib/social/actions";
+import { NEEDS_PROFILE } from "@/lib/social/handles";
 import { hourIn } from "@/lib/utils/dates";
 import { streakFromDates } from "@/lib/utils/streaks";
 import { interestTags, roleKeyOf } from "@/lib/questions/daily";
@@ -34,6 +35,7 @@ import {
   type GreetingFacts,
 } from "./copy";
 import { CompanionError } from "./errors";
+import { habitGap } from "./fields";
 import { logChoice } from "./forms";
 import { companionNameOf, nicknameOf } from "./name";
 import { candidatesFromItems, splitList, statusIn, threadsFromText, threadsMentioned } from "./extract";
@@ -303,13 +305,8 @@ async function threadReply(ctx: EngineCtx, t: IThread, chosen: IQuickReply, said
   const r = ref(t);
 
   if (chosen.value === "share") {
-    await Moment.create({
-      userId: ctx.userId,
-      kind: "milestone",
-      text: `Finished: ${t.title}`,
-      visibility: "public",
-      threadTitle: t.title,
-    });
+    const posted = await shareMoment(ctx.userId, { kind: "milestone", text: `Finished: ${t.title}`, tags: [], visibility: "public", threadTitle: t.title });
+    if (!posted.ok) return { ...base, kind: "reply", text: NEEDS_PROFILE };
     await saveThread(ctx, t._id, { log: withLog(t.log, logItem("Shared on your profile", null, "kata", ctx.now)) });
     return { ...base, kind: "question", text: followUp.shared };
   }
@@ -323,7 +320,7 @@ async function threadReply(ctx: EngineCtx, t: IThread, chosen: IQuickReply, said
       const did = habitDone(t, ctx);
       const after = did ? await saveThread(ctx, t._id, { ...did, log: withLog(t.log, logItem(said, null, "you", ctx.now)) }) : t;
       const done = after ?? t;
-      return { ...base, kind: "reply", text: followUp.habit(done.streak, (done.doneDays ?? []).length <= 1, seed) };
+      return { ...base, kind: "reply", text: followUp.habit(done.streak, (done.doneDays ?? []).length <= 1, seed, habitGap(t.title) > 1) };
     }
     if (status === "paused") {
       await saveThread(ctx, t._id, { status, log: withLog(t.log, logItem(said, status, "you", ctx.now)) });
@@ -426,20 +423,35 @@ const NEXT_STEP_KINDS = new Set<IThread["kind"]>(["project", "goal", "learning",
 const FINISHED = /^(?:that was (?:it|the last(?: one| step)?)|it'?s (?:done|finished)|all done|finished|nothing,? it'?s done)\b/i;
 const FRESH_MS = 6 * 3_600_000;
 
-function moodOf(text: string): number | null {
-  const t = text.toLowerCase().replace(/[.!?]+$/, "").trim();
-  if (t.split(/\s+/).length > 4) return null;
-  if (/^(?:foggy|groggy|hazy|in a fog)\b/.test(t)) return 1;
-  if (/^(?:low|down|sad|bad|rough|awful|terrible|not (?:great|good|well)|meh)\b/.test(t)) return 2;
-  if (/^(?:okay|ok|fine|alright|all right|so-so|not bad|average)\b/.test(t)) return 3;
-  if (/^(?:good|pretty good|well|great|happy|really good)\b/.test(t)) return 4;
-  if (/^(?:bright|amazing|excellent|fantastic|brilliant|wonderful|awesome)\b/.test(t)) return 5;
-  return null;
+const MOODS: [number, string][] = [
+  [1, "foggy|groggy|hazy|in a fog"],
+  [2, "low|down|sad|bad|rough|awful|terrible|not (?:great|good|well)|meh"],
+  [3, "okay|ok|fine|alright|all right|so-so|not bad|average"],
+  [4, "good|pretty good|well|great|happy|really good"],
+  [5, "bright|amazing|excellent|fantastic|brilliant|wonderful|awesome"],
+];
+
+/** The mood in what they typed. `only` when that has to be all they said: "good idea" isn't a mood. */
+function moodOf(text: string, only = false): number | null {
+  const t = text.toLowerCase().replace(/[.!?]+$/, "").replace(/^(?:(?:i['’]?m|i am|feeling|a bit|kinda|quite)\s+)+/, "").trim();
+  // "Good morning" is a hello.
+  if (t.split(/\s+/).length > 4 || /\b(?:morning|afternoon|evening|night)\b/.test(t)) return null;
+  const found = MOODS.find(([, words]) => new RegExp(`^(?:${words})${only ? "$" : "\\b"}`).test(t));
+  return found ? found[0] : null;
 }
 
-/** A typed answer to a check-in, matched to one of its replies. The first reply is always the "yes". */
-function replyFor(text: string, replies: IQuickReply[]): IQuickReply | null {
+/** A typed answer to a check-in, matched to one of its replies. The first reply is the "yes", unless the question turns them around. */
+function replyFor(text: string, msg: ICompanionMessage): IQuickReply | null {
+  const { replies } = msg;
   const t = text.toLowerCase().trim();
+  const no = /^(?:no|nope)\b/.test(t);
+  if (/\bstill (?:the case|stuck)\?/i.test(msg.text)) {
+    if (/^(?:yes|yep|yeah|yup|sure)\b/.test(t)) return replies.find((r) => r.value === "stuck") ?? null;
+    if (no) return replies[0] ?? null;
+  }
+  // "Any movement?" No: it stays as it is, which isn't the same as asking later.
+  const same = no ? replies.find((r) => /^(?:Still |Not (?:really|quite))/.test(r.label)) : undefined;
+  if (same) return same;
   if (/^(?:done|finished|all done)\b/.test(t)) {
     const done = replies.find((r) => r.value === "done");
     if (done) return done;
@@ -574,7 +586,7 @@ async function general(ctx: EngineCtx, messages: ICompanionMessage[], text: stri
   for (const { before, after } of applied.updated) {
     if (after.kind === "habit") {
       // A habit's touchCount only moves when it's done for the day.
-      if (after.touchCount !== before.touchCount) parts.push(followUp.habit(liveStreak(after, ctx), (after.doneDays ?? []).length <= 1, seed));
+      if (after.touchCount !== before.touchCount) parts.push(followUp.habit(liveStreak(after, ctx), (after.doneDays ?? []).length <= 1, seed, habitGap(after.title) > 1));
       else mentioned.push(after);
       continue;
     }
@@ -627,8 +639,24 @@ async function general(ctx: EngineCtx, messages: ICompanionMessage[], text: stri
 }
 
 // Small talk isn't news: with no model to tell the difference, "thanks" would become a next step.
-const CHATTER = /^(?:hi|hello|hey|thanks|thank you|thx|ty|ok|okay|cool|nice|good|great|fine|idk|i don['’]?t know|not sure|nothing|nothing really|tired|lol|haha)[.!?\s]*$/i;
+const CHATTER = /^(?:hi|hello|hey|good (?:morning|afternoon|evening|night)|thanks|thank you|thx|ty|yes|yep|yeah|no|nope|ok|okay|cool|nice|good|great|fine|idk|i don['’]?t know|not sure|nothing|nothing really|tired|lol|haha)[.!?\s]*$/i;
 const ASKS_TO_STOP = /\b(?:stop|delete|remove|archive|pause)\b/i;
+
+/**
+ * A mood typed instead of tapped: it counts the same, and needs no model. Only as the answer to
+ * the day's mood question, so an "ok" later in a conversation stays a word in that conversation.
+ */
+export async function moodSaid(userId: string, raw: string): Promise<Exchange | null> {
+  const text = raw.trim().slice(0, 1000);
+  const mood = moodOf(text, true);
+  if (!mood) return null;
+  const { ctx, messages } = await ensureToday(userId);
+  const msg = [...messages].reverse().find((m) => m.from === "kata" && (m.kind === "mood" || m.kind === "nudge") && m.answer === null);
+  if (!msg || messages.some((m) => m.from === "you" && m.createdAt > msg.createdAt)) return null;
+  await claim(ctx, msg, String(mood));
+  const chosen = MOOD_REPLIES.find((r) => r.value === String(mood)) as IQuickReply;
+  return { ctx, created: await respond(ctx, msg, chosen, text) };
+}
 
 /** The writer typed something. */
 export async function say(userId: string, raw: string): Promise<Exchange> {
@@ -646,7 +674,7 @@ export async function say(userId: string, raw: string): Promise<Exchange> {
       break;
     }
     case "checkin": {
-      const chosen = replyFor(text, context.msg.replies);
+      const chosen = replyFor(text, context.msg);
       if (chosen) {
         await claim(ctx, context.msg, chosen.value);
         out = await respond(ctx, context.msg, chosen, text);

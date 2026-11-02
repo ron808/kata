@@ -15,10 +15,10 @@ import { PageError, savePage } from "@/lib/entries/save";
 import { checkLimit, limiters } from "@/lib/ratelimit/upstash";
 import { follow, replyTo, shareMoment, unfollow } from "@/lib/social/actions";
 import { sendMessage } from "@/lib/social/messages";
-import { handleOf, normalizeHandle } from "@/lib/social/handles";
+import { NEEDS_PROFILE, handleOf, normalizeHandle } from "@/lib/social/handles";
 import type { EntryField, FieldType, FieldValue, ReplyT } from "@/lib/types";
 import type { EngineCtx } from "./engine";
-import { FIELDS_MAX, TRACKED_KINDS, fieldKey, guessFields, parseTrack, specText, valueText, valuesIn } from "./fields";
+import { FIELDS_MAX, TRACKED_KINDS, fieldKey, guessFields, habitName, habitRun, parseTrack, specText, valueText, valuesIn, withHowOften } from "./fields";
 import { applyInputs, complete, ideas, input, logChoice } from "./forms";
 import { COMPANION_COLOURS, COMPANION_NAME_MAX, NAME_IDEAS, NICKNAME_MAX, tidyName } from "./name";
 import { nameReceipts } from "./naming";
@@ -26,7 +26,7 @@ import type { ScreenItem } from "./screen";
 import { createThread, habitDone, logItem, nextHue, saveThread, touch, withFields, withLog, withValue } from "./threads";
 import { guessKind } from "./extract";
 import { capFirst } from "./text";
-import { dateToDay, dayDiff, dayToDate, localDay, parseDueAt } from "./time";
+import { addDays, dateToDay, dayDiff, dayToDate, localDay, parseDueAt } from "./time";
 
 /**
  * Everything Maru can do in the app, as tools for the model. Each one checks what it's given,
@@ -459,7 +459,7 @@ async function updateThread(turn: Turn, args: Args): Promise<string> {
   if (status === "done" && t.kind === "habit") {
     const done = habitDone(t, ctx);
     if (done) Object.assign(set, done);
-    changes.push(done ? `today counted, ${done.streak}-day streak` : "today was already counted");
+    changes.push(done ? `today counted, ${habitRun(done.streak, t.title)}` : "today was already counted");
   } else if (status && status !== t.status) {
     set.status = status;
     logStatus = status;
@@ -484,6 +484,7 @@ async function updateThread(turn: Turn, args: Args): Promise<string> {
     changes.push("the due date wasn't YYYY-MM-DD, so it wasn't changed");
   }
   if (typeof args.shared === "boolean") {
+    if (args.shared && !ctx.user.handle) throw new Unable(NEEDS_PROFILE);
     set.shared = args.shared;
     changes.push(args.shared ? "shown on your profile" : "hidden from your profile");
   }
@@ -524,7 +525,7 @@ async function createThreadTool(turn: Turn, args: Args): Promise<string> {
   const title = titleOf(args.title);
   if (!title) throw new Unable("A thread needs a title.");
   const existing = await findThread(ctx, title);
-  if (existing && threadKey(existing.title) === threadKey(title)) {
+  if (existing && threadKey(habitName(existing.title)) === threadKey(habitName(title))) {
     // Models fill every argument: a blank here means nothing to say, not "clear it".
     const fresh = (k: string, v: unknown) => (k === "status" ? v !== existing.status : k === "track" ? parseTrack(v).some((s) => !existing.fields?.some((f) => f.key === fieldKey(s.label))) : Boolean(v));
     const news = Object.entries(args).filter(([k, v]) => ["status", "next_step", "note", "due", "track"].includes(k) && fresh(k, v));
@@ -541,7 +542,7 @@ async function createThreadTool(turn: Turn, args: Args): Promise<string> {
   const created = await createThread(
     ctx,
     {
-      title,
+      title: kind === "habit" ? withHowOften(title, turn.said) : title,
       kind,
       status: wanted && wanted !== "done" ? wanted : "moving",
       // A next step that only repeats the title says nothing.
@@ -582,7 +583,8 @@ async function createThreadTool(turn: Turn, args: Args): Promise<string> {
   receipt(turn, "thread", `Tracking ${created.title}`, detail.join(" · "), threadHref(created), created.hue);
   // "Walked 30 min" starts it and logs it. Left undone, a model goes back to it on later messages.
   const values = valuesIn(turn.said, created.fields);
-  if (Object.keys(values).length) await logThread(turn, { thread: created.title, values });
+  const day = /\byesterday\b/i.test(turn.said) ? { day: addDays(ctx.day, -1) } : {};
+  if (Object.keys(values).length) await logThread(turn, { thread: created.title, values, ...day });
   return `Now keeping track of "${created.title}" (${kind}${created.fields.length ? `; it tracks ${created.fields.map((f) => f.label).join(", ")}` : ""}).`;
 }
 
@@ -640,14 +642,15 @@ async function logThread(turn: Turn, args: Args): Promise<string> {
 
   const set: Partial<IThread> = { fields };
   const today = day === ctx.day;
-  const streak = t.kind === "habit" && today ? habitDone(t, ctx) : null;
+  // Yesterday counts too: "walked 30 min yesterday" said the morning after is the usual way to say it.
+  const streak = t.kind === "habit" && dayDiff(ctx.day, day) <= 1 ? habitDone(t, ctx, day) : null;
   if (streak) Object.assign(set, streak);
   else if (t.kind !== "habit") Object.assign(set, touch(t, ctx));
   // The numbers keep their own history (the thread's strip), so they stay out of its log.
   await saveThread(ctx, t._id, set);
   turn.changed = true;
   const total = added ? ` ${today ? "today" : "that day"} in all` : "";
-  const detail = [`${lines.join(" · ")}${total}`, today ? "" : shortDay(day), streak && streak.streak > 1 ? `${streak.streak}-day streak` : ""].filter(Boolean).join(" · ");
+  const detail = [`${lines.join(" · ")}${total}`, today ? "" : shortDay(day), streak && streak.streak > 1 ? habitRun(streak.streak, t.title) : ""].filter(Boolean).join(" · ");
   receipt(turn, "thread", `Logged ${t.title}`, detail, threadHref(t), t.hue);
   return `Logged on "${t.title}": ${lines.join(", ")}${total}${noRoom.length ? `. No room for ${noRoom.join(", ")}` : ""}.`;
 }
@@ -902,7 +905,7 @@ async function updateProfile(turn: Turn, args: Args): Promise<string> {
     if (handle) {
       turn.choices.push({
         label: "Make it public",
-        detail: "People could find you in Discover and see what you share. Your pages stay private.",
+        detail: "People could find you in Discover and see what you share. They never see your pages.",
         kind: "settings",
         tool: "go_public",
         args: {},
@@ -1571,7 +1574,7 @@ async function goPublic(turn: Turn): Promise<string> {
   if (!handle) throw new Unable("Going public needs a handle first. Pick one in Settings.");
   await User.updateOne({ _id: turn.ctx.userId }, { $set: { isPublic: true } });
   turn.actions.push({ type: "refresh" });
-  receipt(turn, "settings", "Your profile is public", "People can find you in Discover. Your pages stay private.", `/u/${handle}`);
+  receipt(turn, "settings", "Your profile is public", "People can find you in Discover. They never see your pages.", `/u/${handle}`);
   return "Public.";
 }
 

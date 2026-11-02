@@ -9,7 +9,7 @@ import { handleOf } from "@/lib/social/handles";
 import type { ThreadT } from "@/lib/types";
 import { contextFor, ensureToday, type EngineCtx, type Exchange } from "./engine";
 import { CompanionError } from "./errors";
-import { valueText } from "./fields";
+import { habitRun, valueText } from "./fields";
 import { saidFor } from "./forms";
 import { insertDrafts } from "./messages";
 import { aboutScreen, screenOf, screenLines, type ScreenItem } from "./screen";
@@ -100,7 +100,7 @@ function threadLine(t: ThreadT, ctx: EngineCtx): string {
     const named = `${weekday(due)} ${due}`;
     parts.push(d < 0 ? `was due ${named}` : d === 0 ? `due today (${named})` : d === 1 ? `due tomorrow (${named})` : `due ${named}`);
   }
-  if (t.kind === "habit" && t.streak > 0) parts.push(`${t.streak}-day streak`);
+  if (t.kind === "habit" && t.streak > 0) parts.push(habitRun(t.streak, t.title));
   for (const f of t.fields) parts.push(fieldLine(f, ctx));
   if (t.shared) parts.push("on their profile");
   parts.push(`last mentioned ${when(t.lastTouchedAt, ctx)}`);

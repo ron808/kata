@@ -1,4 +1,5 @@
 import type { ThreadKind } from "@/lib/types";
+import { habitName } from "./fields";
 
 /**
  * Small language helpers so Kata can name a thread mid-sentence ("the payments
@@ -65,7 +66,7 @@ const SURE_VERBS = new Set(
   choose decide try quit finalize finalise cancel return sell edit polish wrap follow reach sort figure
   clear reply respond rehearse outline find investigate explore upgrade install configure merge integrate
   add remove delete replace convert port translate document benchmark optimize optimise automate onboard
-  clean start stop go practice practise prep draft`.split(/\s+/)
+  clean start stop go practice practise prep draft meditate`.split(/\s+/)
 );
 
 /** Verbs aimed at someone: a verb when a name or pronoun follows ("Call Priya", "Email them"). */
@@ -243,6 +244,8 @@ const GERUND_LEAD = /^\p{L}+ing\s+(?:the|a|an|my|our|for|to|about|with|on|up|out
  * webhook", "your job hunt", "fixing the login bug", "Priya's birthday", "Kata".
  */
 export function ref(t: Referable): string {
+  // How often belongs in the title, not the sentence: "Gym 3x a week" reads as the gym.
+  if (t.kind === "habit" && habitName(t.title) !== t.title) return ref({ ...t, title: habitName(t.title) });
   const own = writerCasing(t);
   const title = own ?? t.title;
   const words = title.split(/\s+/);
@@ -254,6 +257,8 @@ export function ref(t: Referable): string {
     if (YOUR_NOUNS.has(lower)) return `your ${lower}`;
     if (THE_NOUNS.has(lower)) return `the ${lower}`;
     if (BARE_NOUNS.has(lower) || /^\p{Ll}+ing$/u.test(lower)) return lower;
+    // A habit called Walk is walking: "Is there time for Walk today?" isn't a sentence.
+    if (t.kind === "habit" && isVerb(lower)) return gerund(lower);
     return title;
   }
   if (GERUND_LEAD.test(title)) return yours(own ?? lowerTitle(title));

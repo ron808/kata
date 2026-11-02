@@ -39,7 +39,7 @@ export const RegisterSchema = z.object({
       "Developer",
       "Designer",
       "Founder",
-      "Job Seeker",
+      "Job seeker",
       "Student",
       "Custom",
     ])

@@ -8,7 +8,8 @@ import { ROLE_PRESETS } from "@/lib/roles";
 export function RoleField({ initial }: { initial: string }) {
   const { toast } = useToast();
   const id = useId();
-  const [role, setRole] = useState(initial);
+  // Older accounts keep the wording they signed up with: "Job Seeker".
+  const [role, setRole] = useState(() => ROLE_PRESETS.find((p) => p.name.toLowerCase() === initial.toLowerCase())?.name ?? initial);
   const [saving, setSaving] = useState(false);
 
   async function choose(next: string) {

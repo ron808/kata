@@ -55,7 +55,7 @@ function kataLines(step: Step, first: string, companion: string, role: RoleKey |
     case "handle":
       return [
         "Last one. Pick a handle so friends can find you.",
-        "Your pages stay private. People only see what you choose to share.",
+        "No one else on Kata sees your pages. People only see what you choose to share.",
       ];
     case "finish":
       return [`That’s everything${first ? `, ${first}` : ""}.`, "I’ll set up your page and put your threads on your map."];

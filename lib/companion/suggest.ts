@@ -58,6 +58,9 @@ const TOPIC_WORDS: [QuestionTag, RegExp][] = [
   ["community", /\b(?:volunteer\w*|community|neighbou?rs?)\b/i],
 ];
 
+// A page is in its writer's words, beside questions like "What did I ship today?".
+const asMine = (q: string) => q.replace(/\b(for|made|helped) you\b/gi, "$1 me").replace(/\byour\b/gi, "my").replace(/\byou\b/gi, "I");
+
 /** No model: the closest role preset, plus a few questions from the bank for what else they mentioned. */
 function fromKeywords(description: string): SuggestedTemplate {
   const scores = ROLE_WORDS.map(([key, re]) => [key, description.match(re)?.length ?? 0] as const);
@@ -66,7 +69,7 @@ function fromKeywords(description: string): SuggestedTemplate {
   const topics = TOPIC_WORDS.filter(([, re]) => re.test(description)).map(([tag]) => tag).slice(0, 3);
   const extra = topics.flatMap((tag) => {
     const q = QUESTION_BANK.find((b) => b.tags[0] === tag && !b.text.includes("{thread}") && b.when === "evening");
-    return q ? [q.text] : [];
+    return q ? [asMine(q.text)] : [];
   });
   const fields: TemplateField[] = [
     ...preset.fields.map((f) => ({ ...f, config: { ...f.config } })),
@@ -74,7 +77,8 @@ function fromKeywords(description: string): SuggestedTemplate {
   ].map((f, i) => ({ ...f, id: nanoid(8), order: i }));
   const named = topics.map((t) => t.replace(/-/g, " "));
   return {
-    name: preset.key === "custom" ? "Daily page" : `${preset.name} page`,
+    // The closest preset, not who they are: a bakery isn't a "Founder / CEO page".
+    name: "Daily page",
     description: named.length ? `${preset.description} With questions on ${joinList(named)}.` : preset.description,
     fields,
   };

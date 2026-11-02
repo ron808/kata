@@ -25,7 +25,7 @@ export function readyAt(text: string): number {
     if (/\bbreakfast\b/i.test(text)) return 9;
   }
   // The night is behind them by morning, and a night shift ended hours ago.
-  if (/\b(?:sleep|slept|shift)\b/i.test(text)) return 0;
+  if (/\b(?:sleep|slept|shift)\b|\bhow was work\b/i.test(text)) return 0;
   return looksBack(text) ? 12 : 0;
 }
 
@@ -34,6 +34,11 @@ export function tooEarly(text: string, hour: number): boolean {
   return readyAt(text) > (hour < 4 ? 24 : hour);
 }
 
+// A page's own questions about the job. On a day off they wait, in case the writer did work.
+const WORKING_DAY = /\b(?:ship|my class|land|a student|clients?|work on today|hours worked|real break|feedback did i receive)\b/i;
+
+export const workdayOnly = (text: string) => WORKING_DAY.test(text);
+
 const matching = (found: string, word: string) => (/^[A-Z]/.test(found) ? word[0].toUpperCase() + word.slice(1) : word);
 
 /**
@@ -41,7 +46,13 @@ const matching = (found: string, word: string) => (/^[A-Z]/.test(found) ? word[0
  * "How did today go?" is right when reading Sunday's page later. What looks ahead stays as it
  * is, because the writer is answering it now.
  */
-export function asYesterday(text: string): string {
+export function asYesterday(text: string, title = ""): string {
+  // A thread's title is a name, not wording: "the hope project" isn't looking ahead.
+  const at = title ? text.toLowerCase().indexOf(title.toLowerCase()) : -1;
+  if (at >= 0) {
+    const name = text.slice(at, at + title.length);
+    return asYesterday(`${text.slice(0, at)}{thread}${text.slice(at + title.length)}`).replace("{thread}", name);
+  }
   let out = text;
   if (looksBack(text)) {
     out = out

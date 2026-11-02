@@ -131,6 +131,12 @@ const PERSONAL = new Set<string>([...ROLE_KEYS, "kids", "pets", "love", "caring"
 // Their days off move, so Saturday means nothing.
 const NO_WEEKEND = new Set<RoleKey>(["shift_worker", "healthcare"]);
 
+/** A weekend, for someone whose weekends are their own. */
+export function isDayOff(role: string, day: string): boolean {
+  const weekday = dayToDate(day).getUTCDay();
+  return (weekday === 0 || weekday === 6) && !NO_WEEKEND.has(roleKeyOf(role));
+}
+
 /** Whether a question about an event still makes sense: no "what's left to prepare" once it's passed. */
 function fitsDate(q: BankQuestion, t: ThreadT, day: string): boolean {
   const due = t.dueAt ? dayDiff(dateToDay(new Date(t.dueAt)), day) : null;
@@ -153,8 +159,7 @@ export function questionsForToday(user: QuestionUser, threads: ThreadT[], day: s
   // The time it actually is, not when they like to be checked in on. The afternoon gets neither.
   const when = past || hour >= 17 || hour < 4 ? "evening" : hour < 12 ? "morning" : null;
   const role = roleKeyOf(user.role);
-  const pageDay = dayToDate(past ? addDays(day, -1) : day).getUTCDay();
-  const dayOff = (pageDay === 0 || pageDay === 6) && !NO_WEEKEND.has(role);
+  const dayOff = isDayOff(user.role, past ? addDays(day, -1) : day);
   const used = new Set<string>();
   const out: DailyQuestion[] = [];
 

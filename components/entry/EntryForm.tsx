@@ -16,7 +16,7 @@ import { Button } from "@/components/shared/Button";
 import { useCompanion } from "@/components/shared/Companion";
 import { Icon } from "@/components/shared/Icon";
 import { Seal } from "@/components/shared/Seal";
-import { asYesterday, tooEarly } from "@/lib/questions/tense";
+import { asYesterday, tooEarly, workdayOnly } from "@/lib/questions/tense";
 import { useToast } from "@/components/shared/Toast";
 import { countWords } from "@/lib/utils/streaks";
 import type {
@@ -40,6 +40,8 @@ interface EntryFormProps {
   past: boolean;
   /** The hour where the writer is, for what's too early to ask. */
   hour: number;
+  /** A weekend for someone with weekends: what a working day answers steps aside. */
+  offDay: boolean;
   /** The way to the other open day. */
   other: { href: string; label: string } | null;
   weekday: string;
@@ -89,6 +91,43 @@ function valueForField(
   }
 }
 
+/** Questions from the page that wait, each with a way to answer it anyway. */
+function SetAside({
+  id,
+  title,
+  note,
+  fields,
+  say,
+  onAnswer,
+}: {
+  id: string;
+  title: string;
+  note: string;
+  fields: TemplateField[];
+  say: (text: string) => string;
+  onAnswer: (id: string) => void;
+}) {
+  if (!fields.length) return null;
+  return (
+    <section aria-labelledby={id} className="mt-14">
+      <h2 id={id} className="font-display text-display-s">
+        {title}
+      </h2>
+      <p className="mt-1.5 max-w-[34rem] text-[0.9375rem] text-ink/70">{note}</p>
+      <ul className="card mt-6 grid grid-cols-1 gap-2 p-3 sm:p-4">
+        {fields.map((f) => (
+          <li key={f.id} className="well flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+            <span className="min-w-0 flex-1 basis-56 font-semibold">{say(f.label)}</span>
+            <button type="button" className="chip chip-sm" onClick={() => onAnswer(f.id)}>
+              Answer now
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function EntryForm({
   template,
   asks = [],
@@ -98,6 +137,7 @@ export function EntryForm({
   date,
   past,
   hour,
+  offDay,
   other,
   weekday,
   monthDay,
@@ -140,17 +180,23 @@ export function EntryForm({
   const [savedPayload, setSavedPayload] = useState(() =>
     serialize(initialValues(template, asks, initialFields))
   );
-  // What can't be answered yet ("What did you eat for dinner?" at nine) waits, unless it's been answered.
+  // What can't be answered yet ("What did you eat for dinner?" at nine) waits, and so does what
+  // only a working day answers, unless it's been answered.
+  const resting = (label: string) => offDay && workdayOnly(label);
   const [later, setLater] = useState<Set<string>>(
     () =>
       new Set(
-        past
-          ? []
-          : template.fields
-              .filter((f) => f.type !== "divider" && tooEarly(f.label, hour) && !filled(initialFields?.find((x) => x.fieldId === f.id)?.value))
-              .map((f) => f.id)
+        template.fields
+          .filter((f) => f.type !== "divider" && (resting(f.label) || (!past && tooEarly(f.label, hour))) && !filled(initialFields?.find((x) => x.fieldId === f.id)?.value))
+          .map((f) => f.id)
       )
   );
+  const answerNow = (id: string) =>
+    setLater((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   const say = (text: string) => (past ? asYesterday(text) : text);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
@@ -279,7 +325,8 @@ export function EntryForm({
           ? "Saved"
           : "Not saved yet";
 
-  const waiting = template.fields.filter((f) => later.has(f.id));
+  const waiting = template.fields.filter((f) => later.has(f.id) && !resting(f.label));
+  const forWork = template.fields.filter((f) => later.has(f.id) && resting(f.label));
   const outlineFields = template.fields
     .filter((f) => f.type !== "divider" && !later.has(f.id))
     .map((f) => ({ id: f.id, label: say(f.label), done: filled(values[f.id]) }));
@@ -347,36 +394,8 @@ export function EntryForm({
             )}
           </div>
 
-          {waiting.length > 0 ? (
-            <section aria-labelledby="later-today" className="mt-14">
-              <h2 id="later-today" className="font-display text-display-s">
-                Later today
-              </h2>
-              <p className="mt-1.5 max-w-[34rem] text-[0.9375rem] text-ink/70">
-                These make more sense once more of the day has happened. They’ll be here, or answer one now.
-              </p>
-              <ul className="card mt-6 grid grid-cols-1 gap-2 p-3 sm:p-4">
-                {waiting.map((f) => (
-                  <li key={f.id} className="well flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
-                    <span className="min-w-0 flex-1 basis-56 font-semibold">{f.label}</span>
-                    <button
-                      type="button"
-                      className="chip chip-sm"
-                      onClick={() =>
-                        setLater((prev) => {
-                          const next = new Set(prev);
-                          next.delete(f.id);
-                          return next;
-                        })
-                      }
-                    >
-                      Answer now
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
+          <SetAside id="later-today" title="Later today" note="These make more sense once more of the day has happened. They’ll be here, or answer one now." fields={waiting} say={say} onAnswer={answerNow} />
+          <SetAside id="for-work" title="For a working day" note="These suit a day at work, so they’ve stepped aside. If you did work, answer one now." fields={forWork} say={say} onAnswer={answerNow} />
 
           {earlier.length > 0 ? (
             <section aria-labelledby="earlier-today" className="mt-14">
@@ -415,7 +434,7 @@ export function EntryForm({
                 {asks.map((a, i) => (
                   <AskCard
                     key={a.fieldId}
-                    ask={{ ...a, text: say(a.text) }}
+                    ask={{ ...a, text: past ? asYesterday(a.text, a.thread ?? "") : a.text }}
                     index={i}
                     value={(values[a.fieldId] as string) ?? ""}
                     onChange={(v) => setValue(a.fieldId, v)}

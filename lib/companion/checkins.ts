@@ -15,6 +15,7 @@ import {
   startsWithVerb,
   stepText,
 } from "./text";
+import { habitGap, habitName } from "./fields";
 import { dueIn, liveStreak, type Ctx } from "./threads";
 
 /**
@@ -115,9 +116,11 @@ function tierOf(t: IThread, ctx: Ctx, history: History): Tier | null {
   if (due === 0) return "event-today";
   if (due !== null && due < 0 && due >= -7) return "event-past";
   if (due !== null && due > 0 && due <= 3) return "event-soon";
-  if ((t.status === "stuck" || t.status === "waiting") && since <= 14) return t.status;
+  // A habit isn't stuck or waiting: it's done on a day or it isn't. Its last touch is the last time it was.
+  if (t.kind !== "habit" && (t.status === "stuck" || t.status === "waiting") && since <= 14) return t.status;
   if (t.kind === "event") return null;
-  if (t.kind === "habit") return since === 0 && t.streak > 0 ? null : "habit";
+  // Asked when it's due: every day, or after the rest a "3x a week" allows.
+  if (t.kind === "habit") return since < habitGap(t.title) && t.streak > 0 ? null : "habit";
   if (t.kind === "person") return since >= 14 ? "new" : null;
   if (STALE_KINDS.has(t.kind) && since >= 7) return "stale";
   if (t.nextStep) return "step";
@@ -302,12 +305,12 @@ export function checkinLine(p: Planned, ctx: Ctx, seed: number, evening = false)
 
     case "habit": {
       const streak = liveStreak(t, ctx);
-      const name = capFirst(t.title);
+      const name = capFirst(habitName(t.title));
       const replies = [R.done, R.notYet, R.pauseIt];
       if (streak >= 2) {
         return {
           text: pick(
-            [`${name} today? You're on ${count(streak)} days in a row.`, `${name} today? That would make ${count(streak + 1)} in a row.`],
+            [`${name} today? You're on ${count(streak)}${habitGap(t.title) > 1 ? "" : " days"} in a row.`, `${name} today? That would make ${count(streak + 1)} in a row.`],
             seed
           ),
           replies,

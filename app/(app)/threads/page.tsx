@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { auth } from "@/lib/auth/authOptions";
 import { contextFor } from "@/lib/companion/engine";
 import { namesFor } from "@/lib/companion/naming";
-import { listThreads } from "@/lib/companion/threads";
+import { listThreads, olderThreads } from "@/lib/companion/threads";
 import { AppPage, PageHeader } from "@/components/shared/AppPage";
 import { Memories, type MemoryT } from "@/components/threads/Memories";
 import { ThreadsBoard } from "@/components/threads/ThreadsBoard";
@@ -16,7 +16,8 @@ async function load(userId: string): Promise<{ threads: ThreadT[]; memories: Mem
     const memories = (ctx.user.memories ?? [])
       .map((m) => ({ _id: String(m._id), text: m.text, at: new Date(m.at).toISOString() }))
       .reverse();
-    return { threads: await listThreads(ctx, 100), memories, today: ctx.day, tz: ctx.tz };
+    const [current, older] = await Promise.all([listThreads(ctx, 100), olderThreads(ctx)]);
+    return { threads: [...current, ...older], memories, today: ctx.day, tz: ctx.tz };
   } catch (err) {
     console.error("threads:load", err);
     return null;
