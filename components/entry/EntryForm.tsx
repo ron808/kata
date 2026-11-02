@@ -105,7 +105,7 @@ function SetAside({
   note: string;
   fields: TemplateField[];
   say: (text: string) => string;
-  onAnswer: (id: string) => void;
+  onAnswer: (field: TemplateField) => void;
 }) {
   if (!fields.length) return null;
   return (
@@ -118,7 +118,7 @@ function SetAside({
         {fields.map((f) => (
           <li key={f.id} className="well flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
             <span className="min-w-0 flex-1 basis-56 font-semibold">{say(f.label)}</span>
-            <button type="button" className="chip chip-sm" onClick={() => onAnswer(f.id)}>
+            <button type="button" className="chip chip-sm" onClick={() => onAnswer(f)}>
               Answer now
             </button>
           </li>
@@ -191,12 +191,18 @@ export function EntryForm({
           .map((f) => f.id)
       )
   );
-  const answerNow = (id: string) =>
-    setLater((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
+  // It comes back further up the page, so go to it: the button that was pressed has gone.
+  const answerNow = (field: TemplateField) => {
+    flushSync(() =>
+      setLater((prev) => {
+        const next = new Set(prev);
+        next.delete(field.id);
+        return next;
+      })
+    );
+    document.getElementById(cardId(field.id))?.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+    if (isLabelable(field)) document.getElementById(fieldInputId(field))?.focus({ preventScroll: true });
+  };
   const say = (text: string) => (past ? asYesterday(text) : text);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
