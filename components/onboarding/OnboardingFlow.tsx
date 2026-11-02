@@ -17,8 +17,8 @@ import { checkInInfo, cleanHandle, interestChoices, joinWords, roleInfo, type Ch
 
 type Step = "names" | "role" | "plate" | "interests" | "checkin" | "page" | "handle" | "finish";
 const STEPS: Step[] = ["names", "role", "plate", "interests", "checkin", "page", "handle", "finish"];
+const STEPS_WITH_A_PAGE = STEPS.filter((s) => s !== "page");
 /** Everything but "finish" is a question. */
-const QUESTIONS = STEPS.length - 1;
 
 /** What the companion says to open each step. The last line is the question the step's controls answer. */
 function kataLines(step: Step, first: string, companion: string, role: RoleKey | null, threads: number): string[] {
@@ -46,7 +46,7 @@ function kataLines(step: Step, first: string, companion: string, role: RoleKey |
         "What would you like me to ask about? Pick a few and I’ll shape my questions around them.",
       ];
     case "checkin":
-      return ["When should I check in?"];
+      return ["When do you usually open Kata? I don’t send notifications: my check-in will be ready when you come."];
     case "page":
       return [
         "Here’s your page. It’s what you’ll fill in each day.",
@@ -75,10 +75,13 @@ export function OnboardingFlow({
   suggestedHandle,
   interestTags,
   today,
+  hasPage,
 }: {
   firstName: string;
   currentHandle: string | null;
   suggestedHandle: string | null;
+  /** They already have a daily page, which stays: there's no choosing one. */
+  hasPage: boolean;
   /** Topics Kata has questions for (the question bank's tags). */
   interestTags: string[];
   /** Today's date, formatted on the server; the visitor's local date replaces it. */
@@ -107,11 +110,13 @@ export function OnboardingFlow({
 
   const handleStatus = useHandleStatus(handle, currentHandle);
   const lastInput = useRef<"keyboard" | "pointer" | "touch">("keyboard");
+  const steps = hasPage ? STEPS_WITH_A_PAGE : STEPS;
+  const questionCount = steps.length - 1;
   const wantFocus = useRef(false);
   const controls = useRef<HTMLLIElement | null>(null);
   const question = useRef<HTMLParagraphElement | null>(null);
 
-  const step = STEPS[at];
+  const step = steps[at];
   // What they chose to be called, and to call their companion, from the first answer on.
   const named = at > 0 ? tidyName(nickname, NICKNAME_MAX) || firstName : firstName;
   const companion = at > 0 ? tidyName(companionName, COMPANION_NAME_MAX) || DEFAULT_COMPANION : DEFAULT_COMPANION;
@@ -122,7 +127,7 @@ export function OnboardingFlow({
   const preset = role ? presetByKey(role) : null;
   const fields = preset?.fields ?? [];
   const kept = fields.filter((_, i) => !dropped.includes(i));
-  const claimed = !handleSkipped && at > STEPS.indexOf("handle") ? cleanHandle(handle) || null : null;
+  const claimed = !handleSkipped && at > steps.indexOf("handle") ? cleanHandle(handle) || null : null;
 
   // Kata "types" each line of the current step, one at a time. Reduced motion: all at once.
   useEffect(() => {
@@ -163,7 +168,7 @@ export function OnboardingFlow({
       setEditing(null);
       return;
     }
-    setAt((a) => Math.min(a + 1, STEPS.length - 1));
+    setAt((a) => Math.min(a + 1, steps.length - 1));
     setShown(0);
   }
 
@@ -230,7 +235,7 @@ export function OnboardingFlow({
           nickname: named === firstName ? "" : named,
           companionName: companion === DEFAULT_COMPANION ? "" : companion,
           ...(companionHue ? { companionHue } : {}),
-          ...(dropped.length
+          ...(dropped.length && !hasPage
             ? { fields: kept.map((f, i) => ({ ...f, id: nanoid(8), order: i, config: { ...f.config } })) }
             : {}),
         }),
@@ -385,7 +390,7 @@ export function OnboardingFlow({
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-2.5">
               <span aria-hidden className="flex gap-1">
-                {Array.from({ length: QUESTIONS }, (_, i) => (
+                {Array.from({ length: questionCount }, (_, i) => (
                   <span
                     key={i}
                     className={`h-2.5 w-2.5 rounded-full border-2 border-edge transition-colors duration-300 ${
@@ -395,10 +400,10 @@ export function OnboardingFlow({
                 ))}
               </span>
               <span className="text-[0.8125rem] font-semibold tabular-nums text-ink/65">
-                {at < QUESTIONS ? (
+                {at < questionCount ? (
                   <>
                     <span className="sr-only">Question </span>
-                    {at + 1} of {QUESTIONS}
+                    {at + 1} of {questionCount}
                   </>
                 ) : (
                   "All set"
@@ -408,7 +413,7 @@ export function OnboardingFlow({
           </header>
 
           <ol className="mt-6 grid grid-cols-1 gap-3">
-            {STEPS.slice(0, at + 1).map((s, i) => {
+            {steps.slice(0, at + 1).map((s, i) => {
               const all = i < at ? kataLines(s, s === "names" ? firstName : named, companion, role, focus.length) : lines;
               const visible = i < at ? all : all.slice(0, shown);
               const ready = i < at || shown >= all.length;
@@ -486,7 +491,7 @@ export function OnboardingFlow({
               kept={kept}
               focus={focus}
               interests={interests}
-              checkIn={at > STEPS.indexOf("checkin") ? checkIn : null}
+              checkIn={at > steps.indexOf("checkin") ? checkIn : null}
               handle={claimed}
               companion={companion}
             />

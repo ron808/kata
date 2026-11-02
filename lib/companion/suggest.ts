@@ -65,7 +65,7 @@ function fromKeywords(description: string): SuggestedTemplate {
   const preset = ROLE_PRESETS.find((p) => p.key === best[0]) ?? ROLE_PRESETS[ROLE_PRESETS.length - 1];
   const topics = TOPIC_WORDS.filter(([, re]) => re.test(description)).map(([tag]) => tag).slice(0, 3);
   const extra = topics.flatMap((tag) => {
-    const q = QUESTION_BANK.find((b) => b.tags[0] === tag && !b.text.includes("{thread}") && b.when !== "morning");
+    const q = QUESTION_BANK.find((b) => b.tags[0] === tag && !b.text.includes("{thread}") && b.when === "evening");
     return q ? [q.text] : [];
   });
   const fields: TemplateField[] = [

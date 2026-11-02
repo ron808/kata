@@ -475,9 +475,9 @@ function ListField({ id, input: i, value, onChange, onTouch }: { id: string; inp
   );
 }
 
-/** A local yyyy-mm-dd, days from today. */
+/** A local yyyy-mm-dd, days from the writer's today, which runs until 4am. */
 function localDay(add: number): string {
-  const d = new Date();
+  const d = new Date(Date.now() - 4 * 3_600_000);
   d.setDate(d.getDate() + add);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

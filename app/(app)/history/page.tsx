@@ -12,7 +12,9 @@ import { Icon } from "@/components/shared/Icon";
 import { Seal } from "@/components/shared/Seal";
 import { PageList } from "@/components/dashboard/RecentPages";
 import { hueForTag, threadTagHues } from "@/components/entry/hue";
-import { formatDate, isoDay, todayUtcMidnight } from "@/lib/utils/dates";
+import { formatDate, isoDay } from "@/lib/utils/dates";
+import { dateToDay, todayIn, validTimeZone } from "@/lib/companion/time";
+import { User } from "@/lib/db/models/User";
 import type { Entry as EntryT } from "@/lib/types";
 
 const PER_PAGE = 20;
@@ -34,7 +36,8 @@ export default async function HistoryPage(props: {
 
   const filter: Record<string, unknown> = { userId };
   if (tag) filter.tags = tag;
-  const today = todayUtcMidnight();
+  const me = await User.findById(userId).select("timezone").lean();
+  const today = todayIn(validTimeZone(me?.timezone));
 
   const [entries, total, tagCounts, kataTagRows, threads, todayEntry, { name }] = await Promise.all([
     Entry.find(filter)
@@ -164,8 +167,8 @@ export default async function HistoryPage(props: {
           tag
             ? `${plural(total, "page")} filed under #${tag}${isKata ? `, including answers to ${name}’s questions` : ""}.`
             : total
-              ? `${plural(total, "page")} so far. Only you can read ${total === 1 ? "it" : "them"}.`
-              : "Every page you write lands here, newest first. Only you can read them."
+              ? `${plural(total, "page")} so far. No one else on Kata can read ${total === 1 ? "it" : "them"}.`
+              : "Every page you write lands here, newest first. No one else on Kata can read them."
         }
       />
 
@@ -216,7 +219,7 @@ export default async function HistoryPage(props: {
             <span className="block font-display text-[1.35rem] leading-tight">{formatDate(today, "long", "UTC")}</span>
             <span className="text-[0.9375rem] text-ink/70">Today’s page is still blank.</span>
           </p>
-          <Link href="/entry/new" className={buttonClass({ variant: "secondary" })}>
+          <Link href="/entry/new?day=today" className={buttonClass({ variant: "secondary" })}>
             <Icon name="pen" className="h-4 w-4" />
             Write it
           </Link>
@@ -246,7 +249,7 @@ export default async function HistoryPage(props: {
               Nothing this far back yet.
             </EmptyNote>
           ) : (
-            <EmptyNote action={<Link href="/entry/new" className={buttonClass()}>Write today’s page</Link>}>
+            <EmptyNote action={<Link href="/entry/new" className={buttonClass()}>Write your first page</Link>}>
               No pages yet. Today’s is waiting, and it can be a few lines.
             </EmptyNote>
           )}
@@ -266,7 +269,7 @@ export default async function HistoryPage(props: {
                 </p>
               </div>
               <div className="card overflow-hidden">
-                <PageList entries={m.entries} showMonth={false} moods={moods} tagHues={threadHues} />
+                <PageList entries={m.entries} today={dateToDay(today)} showMonth={false} moods={moods} tagHues={threadHues} />
               </div>
             </section>
           ))}

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Composer — "Share something": the kind (Win, Shipped, Thought, Question), the text, up to five
+ * Composer — "Share something": the kind (Win, Finished, Thought, Question), the text, up to five
  * tags and who sees it (Everyone, or Friends: people who follow each other). Posts to
  * /api/moments and hands the new moment to onShared. With no handle yet, the handle step opens
  * in place of the Share button and the moment goes out once it's claimed.
@@ -27,7 +27,7 @@ type ShareKind = (typeof SHARE_KINDS)[number];
 
 const PROMPT: Record<ShareKind, string> = {
   win: "What went right?",
-  ship: "What did you ship?",
+  ship: "What did you finish?",
   thought: "What’s on your mind?",
   question: "What would you like to ask?",
 };

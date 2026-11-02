@@ -185,7 +185,7 @@ async function contextOf(
     return `[${dayLabel(e.date)}] ${text.slice(0, 260)}`;
   });
   const writtenToday = pages[0] && dateToDay(new Date(pages[0].date)) === ctx.day;
-  const questions = questionsForToday(u, threads, ctx.day).map((q) => `#${q.tag} ${q.text}`);
+  const questions = questionsForToday(u, threads, ctx.day, { hour: ctx.hour }).map((q) => `#${q.tag} ${q.text}`);
   const place = placeOf(where);
 
   return [
@@ -414,6 +414,11 @@ export async function converse(userId: string, raw: string, seen: Seen = {}): Pr
       choices: turn.choices,
     },
   ]);
+  // Said in their own words: today's check-in on that thread has its answer, so it doesn't stay open or come back tonight.
+  const touched = turn.done.flatMap((d) => /[?&]t=([0-9a-f]{24})/.exec(d.href ?? "")?.[1] ?? []);
+  if (touched.length) {
+    await CompanionMessage.updateMany({ userId: ctx.userId, day: ctx.day, kind: "checkin", answer: null, threadId: { $in: touched } }, { $set: { answer: "said" } });
+  }
   return { ctx, created: [...opened, ...created], actions: refreshed(turn) };
 }
 

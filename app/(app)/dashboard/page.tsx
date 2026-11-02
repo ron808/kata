@@ -7,14 +7,14 @@ import { User } from "@/lib/db/models/User";
 import { isGroqConfigured } from "@/lib/ai/groq";
 import { loadCompanion, type CompanionState } from "@/lib/companion/load";
 import { namesFor } from "@/lib/companion/naming";
-import { localDay, validTimeZone } from "@/lib/companion/time";
+import { dayToDate, localDay, validTimeZone } from "@/lib/companion/time";
 import { loadFeed, loadPeople } from "@/lib/social/load";
 import { workingOn, type WorkingOnT } from "@/lib/social/working";
 import { buildAlmanac } from "@/lib/utils/almanac";
-import { formatDate, hourIn, isoDay, todayUtcMidnight } from "@/lib/utils/dates";
+import { streakFromDates } from "@/lib/utils/streaks";
+import { SetupCard } from "@/components/home/SetupCard";
+import { formatDate, hourIn, isoDay } from "@/lib/utils/dates";
 import { AppPage } from "@/components/shared/AppPage";
-import { buttonClass } from "@/components/shared/Button";
-import { KataMark } from "@/components/shared/Avatar";
 import { AlmanacLegend, YearAlmanac } from "@/components/shared/YearAlmanac";
 import { LetterCard } from "@/components/dashboard/LetterCard";
 import { StatsRow } from "@/components/dashboard/StatsRow";
@@ -61,14 +61,14 @@ async function loadHome(userId: string): Promise<HomeData | null> {
       loadPeople(userId, {}),
       workingOn(userId),
     ]);
-    const todayIso = isoDay(todayUtcMidnight());
-    const todayEntry = entries.find((e) => isoDay(e.date) === todayIso);
+    const today = localDay(tz);
+    const todayEntry = entries.find((e) => isoDay(e.date) === today);
     const totalEntries = user.totalEntries ?? entries.length;
     const totalWords = user.totalWords ?? 0;
     return {
       companion,
       tz,
-      today: localDay(tz),
+      today,
       checkIn: user.checkIn ?? "morning",
       handle: user.handle ?? null,
       // Accounts from before the companion have a page but have never met Kata.
@@ -92,7 +92,7 @@ async function loadHome(userId: string): Promise<HomeData | null> {
       working,
       words: new Map(entries.map((e) => [isoDay(e.date), e.wordCount ?? 0])),
       stats: {
-        streak: user.streak ?? 0,
+        streak: streakFromDates(entries.map((e) => e.date), dayToDate(today)),
         longestStreak: user.longestStreak ?? 0,
         totalEntries,
         totalWords,
@@ -106,9 +106,9 @@ async function loadHome(userId: string): Promise<HomeData | null> {
 }
 
 function greeting(hour: number) {
-  if (hour < 5) return "Still up";
+  if (hour < 4) return "Still up";
   if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
+  if (hour < 17) return "Good afternoon";
   return "Good evening";
 }
 
@@ -123,7 +123,7 @@ export default async function HomePage() {
     <AppPage>
       <header className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
         <div className="min-w-0">
-          <p className="text-[0.9375rem] font-medium text-ink/70">{formatDate(now, "long", tz)}</p>
+          <p className="text-[0.9375rem] font-medium text-ink/70">{data ? formatDate(dayToDate(data.today), "long", "UTC") : formatDate(now, "long", tz)}</p>
           <h1 className="mt-2 font-display text-display-m">
             {greeting(hourIn(tz, now))}
             {first ? (
@@ -147,23 +147,11 @@ export default async function HomePage() {
 
       {!data ? (
         <p role="alert" data-hue="0" className="mt-8 rounded-md border-2 border-edge bg-tint px-4 py-3 text-[0.9375rem] font-medium text-deep">
-          Kata can’t reach the database. Add <code className="font-semibold">MONGODB_URI</code> to your{" "}
-          <code className="font-semibold">.env.local</code> and reload.
+          Kata can’t reach the database right now. Reload in a moment.
         </p>
       ) : (
         <>
-          {data.needsSetup ? (
-            <div className="card mt-8 flex flex-wrap items-center gap-4 p-4 sm:p-6">
-              <KataMark size={44} />
-              <p className="min-w-0 flex-1 text-[1.0625rem]">
-                <span className="font-semibold">Let’s get to know each other.</span> Two minutes with {name}: what you do,
-                what’s on your plate, when to check in.
-              </p>
-              <Link href="/onboarding" className={buttonClass()}>
-                Set it up
-              </Link>
-            </div>
-          ) : null}
+          {data.needsSetup ? <SetupCard name={name} /> : null}
 
           <div className="mt-8">
             <HomeBoard
@@ -180,6 +168,7 @@ export default async function HomePage() {
                     questions={data.companion.questions}
                     threads={data.companion.threads}
                     todayEntryId={data.todayEntryId}
+                    past={data.companion.pageDay !== data.today}
                     companionName={name}
                   />
                   <LetterCard digest={data.letter} companionName={name} />
@@ -196,15 +185,15 @@ export default async function HomePage() {
             </PeopleProvider>
           </div>
 
-          <YearCard words={data.words} stats={data.stats} />
+          <YearCard words={data.words} stats={data.stats} today={data.today} />
         </>
       )}
     </AppPage>
   );
 }
 
-function YearCard({ words, stats }: { words: Map<string, number>; stats: HomeData["stats"] }) {
-  const months = buildAlmanac(words, todayUtcMidnight());
+function YearCard({ words, stats, today }: { words: Map<string, number>; stats: HomeData["stats"]; today: string }) {
+  const months = buildAlmanac(words, dayToDate(today));
   const written = [...words.keys()].filter((d) => d >= months[0].days[0].date).length;
   return (
     <section aria-labelledby="year-heading" className="card mt-6 p-4 sm:p-6">

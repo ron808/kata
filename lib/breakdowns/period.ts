@@ -150,6 +150,9 @@ function read(s: string, today: string, start?: string): Period | null {
     case "yesterday":
       return { from: addDays(today, -1), to: addDays(today, -1), unit: "day" };
     case "week":
+      // "How was my week?" on a Monday means the one that just ended.
+      if (today === thisWeek) return { from: addDays(thisWeek, -7), to: addDays(thisWeek, -1), unit: "week" };
+      return { from: thisWeek, to: addDays(thisWeek, 6), unit: "week" };
     case "this week":
     case "current week":
       return { from: thisWeek, to: addDays(thisWeek, 6), unit: "week" };
@@ -157,6 +160,8 @@ function read(s: string, today: string, start?: string): Period | null {
     case "previous week":
       return { from: addDays(thisWeek, -7), to: addDays(thisWeek, -1), unit: "week" };
     case "month":
+      if (today === monthStart(today)) return { from: lastMonth, to: monthEnd(lastMonth), unit: "month" };
+      return { from: monthStart(today), to: monthEnd(today), unit: "month" };
     case "this month":
     case "current month":
       return { from: monthStart(today), to: monthEnd(today), unit: "month" };

@@ -23,7 +23,8 @@ import { KataMark } from "@/components/shared/Avatar";
 import { buttonClass } from "@/components/shared/Button";
 import { Icon } from "@/components/shared/Icon";
 import { Seal } from "@/components/shared/Seal";
-import { isoDay, todayUtcMidnight } from "@/lib/utils/dates";
+import { isoDay } from "@/lib/utils/dates";
+import { addDays, localDay, validTimeZone } from "@/lib/companion/time";
 import type { EntryField, TemplateField } from "@/lib/types";
 
 const fmt = (d: Date, o: Intl.DateTimeFormatOptions) => d.toLocaleDateString("en-US", { ...o, timeZone: "UTC" });
@@ -75,7 +76,7 @@ export default async function ViewEntryPage(props: { params: Promise<{ entryId: 
     Entry.findOne({ userId, date: { $lt: entry.date } }).sort({ date: -1 }).select("date").lean(),
     Entry.findOne({ userId, date: { $gt: entry.date } }).sort({ date: 1 }).select("date").lean(),
     Entry.countDocuments({ userId, date: { $lte: entry.date } }),
-    User.findById(userId).select("handle name").lean(),
+    User.findById(userId).select("handle name timezone").lean(),
     Thread.find({ userId, archived: false }).select("title tags hue").sort({ lastTouchedAt: -1 }).limit(200).lean(),
     // The mood check with Kata that day, for pages whose template has no mood field.
     CompanionMessage.findOne({ userId, from: "you", mood: { $ne: null }, day }).sort({ createdAt: -1 }).select("mood").lean(),
@@ -91,7 +92,10 @@ export default async function ViewEntryPage(props: { params: Promise<{ entryId: 
   const suggested = handle || !user ? null : await suggestHandle(user.name ?? "").catch(() => null);
 
   const date = new Date(entry.date);
-  const isToday = day === isoDay(todayUtcMidnight());
+  const today = localDay(validTimeZone(user?.timezone));
+  const isToday = day === today;
+  // Yesterday's page is still open: it's the one people fill in over breakfast.
+  const openDay = isToday ? "today" : day === addDays(today, -1) ? "yesterday" : null;
   const moodField = pageFields.find((f) => f.type === "mood_slider" && typeof f.value === "number");
   const mood = (moodField?.value as number | undefined) ?? checkIn?.mood ?? null;
   const label = moodLabel(mood);
@@ -121,8 +125,8 @@ export default async function ViewEntryPage(props: { params: Promise<{ entryId: 
           <Icon name="arrow-left" className="h-4 w-4" />
           All pages
         </Link>
-        {isToday ? (
-          <Link href="/entry/new" className={buttonClass({ variant: "secondary" })}>
+        {openDay ? (
+          <Link href={`/entry/new?day=${openDay}`} className={buttonClass({ variant: "secondary" })}>
             <Icon name="pen" className="h-4 w-4" />
             Keep writing
           </Link>
@@ -245,7 +249,7 @@ export default async function ViewEntryPage(props: { params: Promise<{ entryId: 
             <ShareLine entryId={String(entry._id)} passages={passages} tags={tags.map((t) => ({ tag: t, hue: hueForTag(t, threadHues) }))} handle={handle} suggestedHandle={suggested} />
             <p className="inline-flex items-center gap-2 text-[0.875rem] text-ink/65">
               <Icon name="lock" className="h-4 w-4" />
-              Only you can read this page.
+              No one else on Kata can read this page.
             </p>
           </footer>
 
@@ -287,7 +291,7 @@ export default async function ViewEntryPage(props: { params: Promise<{ entryId: 
           </Link>
         ) : isToday ? null : (
           <Link
-            href="/entry/new"
+            href="/entry/new?day=today"
             className="press group flex min-h-20 items-center justify-end gap-3 rounded-lg border-2 border-edge bg-surface px-4 py-4 text-right transition-[transform,box-shadow] duration-300 sm:gap-4 sm:px-5"
           >
             <span className="min-w-0">

@@ -2,7 +2,7 @@ import { Icon } from "@/components/shared/Icon";
 import s from "./landing.module.css";
 
 const YOURS = [
-  ["Your pages", "Always private. There’s no setting that shares them."],
+  ["Your pages", "No one on Kata sees them, and no setting shares them. An AI model run by Groq reads them so Maru can keep track."],
   ["Your threads", "Maru’s map of what you’re working on is for you alone."],
   ["Maru’s check-ins, questions and letters", "Written to you, kept with your pages."],
 ] as const;

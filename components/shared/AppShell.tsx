@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { signOut } from "next-auth/react";
 import { useEffect, useRef, useState } from "react";
@@ -18,6 +18,8 @@ export interface ShellUser {
   email: string;
   handle: string | null;
   hue: number;
+  /** Where Kata thinks they are, which decides what today is. */
+  timezone: string | null;
   /** What they call their companion, and what it calls them. */
   names: Names;
 }
@@ -54,12 +56,25 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const messages = useUnreadMessages(messagesAtLoad, pathname);
   // Focus modes bring their own bottom bar, so the tab bar steps aside.
   const writing = pathname.startsWith("/entry/new");
   const focused = writing || pathname === "/settings/template";
   // The companion's colour: on the shell for the first paint, on <html> for dialogs and toasts outside it.
   const maru = user.names.hue ?? undefined;
+  // Today follows the writer: someone who travels shouldn't stay on the day they left behind.
+  useEffect(() => {
+    const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (!here || !user.timezone || here === user.timezone) return;
+    void fetch("/api/settings/kata", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timezone: here }),
+    }).then((res) => {
+      if (res.ok) router.refresh();
+    });
+  }, [user.timezone, router]);
   useEffect(() => {
     const html = document.documentElement;
     if (maru) html.dataset.maru = String(maru);
@@ -124,7 +139,7 @@ export function AppShell({
             className="press mt-6 flex h-12 items-center justify-center gap-2.5 rounded-full border-2 border-edge bg-accent px-4 font-semibold text-on-accent transition-[transform,box-shadow] duration-300"
           >
             <Icon name="pen" className="h-[1.1rem] w-[1.1rem]" />
-            Write today’s page
+            Write your page
           </Link>
           <div className="mt-auto">
             <AccountMenu user={user} pathname={pathname} placement="up" />
@@ -188,7 +203,7 @@ export function AppShell({
                   <li key="today" className="flex justify-center">
                     <Link
                       href="/entry/new"
-                      aria-label="Write today’s page"
+                      aria-label="Write your page"
                       className="press grid h-13 w-13 place-items-center rounded-full border-2 border-edge bg-accent text-on-accent transition-[transform,box-shadow] duration-300"
                     >
                       <Icon name="plus" className="h-6 w-6" strokeWidth={2.2} />
@@ -315,7 +330,6 @@ function AccountMenu({
         ] as const)
       : []),
     { href: "/settings", label: "Settings", icon: "settings" },
-    { href: "/lab", label: "The Lab", icon: "flask" },
   ];
 
   return (

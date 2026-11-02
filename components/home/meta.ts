@@ -1,6 +1,6 @@
 import { valueText } from "@/lib/companion/fields";
-import { dayDiff, localDay, weekdayOf } from "@/lib/companion/time";
-import type { ThreadT } from "@/lib/types";
+import { dayDiff, localDay, monthDayOf, weekdayOf } from "@/lib/companion/time";
+import type { ThreadStatus, ThreadT } from "@/lib/types";
 
 const n = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 
@@ -20,6 +20,42 @@ export function touchedPhrase(iso: string, today: string, tz: string): string {
   return "A while back";
 }
 
+const doneToday = (t: ThreadT, today: string, tz: string) => t.streak > 0 && localDay(tz, new Date(t.lastTouchedAt)) === today;
+
+/** What someone can say about a thread. A habit is done today or it isn't, and a person is never done. */
+export function stepsFor(kind: ThreadT["kind"]): { value: ThreadStatus; label: string }[] {
+  if (kind === "habit") {
+    return [
+      { value: "moving", label: "Going" },
+      { value: "done", label: "Done today" },
+      { value: "paused", label: "Paused" },
+    ];
+  }
+  if (kind === "person") {
+    return [
+      { value: "moving", label: "All good" },
+      { value: "waiting", label: "Waiting" },
+      { value: "paused", label: "Paused" },
+    ];
+  }
+  return [
+    { value: "moving", label: "Moving" },
+    { value: "stuck", label: "Stuck" },
+    { value: "waiting", label: "Waiting" },
+    { value: "done", label: "Done" },
+    { value: "paused", label: "Paused" },
+  ];
+}
+
+/** "Moving" says nothing about a habit or a person, so only their other states are worth a badge. */
+export const showsStatus = (t: ThreadT) => t.status !== "moving" || (t.kind !== "habit" && t.kind !== "person");
+
+/** Which of those it's on now. */
+export function stepOn(t: ThreadT, step: ThreadStatus, today: string, tz: string): boolean {
+  if (t.kind !== "habit" || t.status === "paused") return t.status === step;
+  return step === "done" ? doneToday(t, today, tz) : step === "moving" && !doneToday(t, today, tz);
+}
+
 /** A few words about a thread for the map and its cards: a due day, a streak, how long it's been stuck. */
 export function threadMeta(t: ThreadT, today: string, tz: string): string {
   if (t.status === "done") return "Done";
@@ -32,14 +68,18 @@ export function threadMeta(t: ThreadT, today: string, tz: string): string {
   if (t.dueAt) {
     const due = t.dueAt.slice(0, 10);
     const d = dayDiff(due, today);
-    if (d < 0) return "Passed";
+    if (d < 0) return `Was ${monthDayOf(due)}`;
     if (d === 0) return "Today";
     if (d === 1) return "Tomorrow";
     if (d < 7) return weekdayOf(due);
     return `In ${d} days`;
   }
-  if (t.kind === "habit" && t.streak > 1) return `${t.streak}-day streak`;
-  return touchedPhrase(t.lastTouchedAt, today, tz);
+  if (t.kind === "habit") {
+    const alive = dayDiff(today, localDay(tz, new Date(t.lastTouchedAt))) <= 1 && t.streak > 1;
+    return `${alive ? `${t.streak}-day streak · ` : ""}${doneToday(t, today, tz) ? "Done today" : "Not yet today"}`;
+  }
+  if (t.kind === "event") return "No date";
+  return `Came up ${touchedPhrase(t.lastTouchedAt, today, tz).toLowerCase()}`;
 }
 
 /** What was logged on a thread today, in a few words: "30 min · 2 km today". Empty when nothing was. */
@@ -55,7 +95,7 @@ export function todayLine(t: ThreadT, today: string): string {
 export function metaWithToday(t: ThreadT, today: string, tz: string): string {
   const meta = threadMeta(t, today, tz);
   const line = todayLine(t, today);
-  return line ? (meta === "Today" ? line : `${meta} · ${line}`) : meta;
+  return line ? (meta === "Today" || meta === "Came up today" ? line : `${meta} · ${line}`) : meta;
 }
 
 /** Threads that belong on the map: what's still on your mind. */

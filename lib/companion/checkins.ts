@@ -68,6 +68,7 @@ const R = {
   onTrack: reply("On track", "moving"),
   behind: reply("Behind", "stuck"),
   wentWell: reply("It went well", "done"),
+  rough: reply("It was rough", "done"),
   didntHappen: reply("It didn't happen", "paused"),
   notYet: reply("Not yet", "later"),
   pauseIt: reply("Pause it", "paused"),
@@ -91,45 +92,47 @@ function since(when: string): string {
   return when.startsWith("On ") ? when.slice(3) : when.charAt(0).toLowerCase() + when.slice(1);
 }
 
+// The day something happens outranks being stuck on it.
 const TIER_RANK: Record<Tier, number> = {
-  stuck: 0,
-  waiting: 1,
-  "event-past": 2,
-  "event-today": 2,
-  "event-soon": 3,
-  habit: 4,
-  stale: 5,
-  step: 6,
-  new: 7,
+  "event-today": 0,
+  "event-past": 1,
+  stuck: 2,
+  waiting: 3,
+  "event-soon": 4,
+  habit: 5,
+  stale: 6,
+  step: 7,
+  new: 8,
 };
 
-const STALE_KINDS = new Set(["goal", "project", "learning", "health", "other"]);
+const STALE_KINDS = new Set(["goal", "project", "learning", "health", "task", "other"]);
 
 function tierOf(t: IThread, ctx: Ctx, history: History): Tier | null {
   if (t.archived || t.status === "done" || t.status === "paused") return null;
   const since = dayDiff(ctx.day, localDay(ctx.tz, t.lastTouchedAt));
-  if ((t.status === "stuck" || t.status === "waiting") && since <= 14) return t.status;
   const due = dueIn(t, ctx);
-  if (t.kind === "event") {
-    if (due === null) return null;
-    if (due < 0 && due >= -2) return "event-past";
-    if (due === 0) return "event-today";
-    if (due > 0 && due <= 3) return "event-soon";
-    return null;
-  }
+  // A date comes first: on the day, what's stuck about it matters less than the day. Anything can have one.
+  if (due === 0) return "event-today";
+  if (due !== null && due < 0 && due >= -7) return "event-past";
+  if (due !== null && due > 0 && due <= 3) return "event-soon";
+  if ((t.status === "stuck" || t.status === "waiting") && since <= 14) return t.status;
+  if (t.kind === "event") return null;
   if (t.kind === "habit") return since === 0 && t.streak > 0 ? null : "habit";
+  if (t.kind === "person") return since >= 14 ? "new" : null;
   if (STALE_KINDS.has(t.kind) && since >= 7) return "stale";
   if (t.nextStep) return "step";
+  // Its date is a while off: it'll come up nearer the time.
+  if (due !== null && due > 3) return null;
   if (!history.asked.has(String(t._id)) && localDay(ctx.tz, t.createdAt) < ctx.day) return "new";
   return null;
 }
 
-/** Not two days running, unless it's stuck, due, or Kata said it would ask again. */
+/** Not two days running, unless it's stuck, happening today, a daily habit, or Kata said it would ask again. */
 function allowed(t: IThread, tier: Tier, history: History): boolean {
   const id = String(t._id);
   if (!history.yesterday.has(id)) return true;
   const answer = history.yesterday.get(id);
-  return tier === "stuck" || tier.startsWith("event") || answer === "waiting" || answer === "stuck";
+  return tier === "stuck" || tier === "habit" || tier === "event-today" || answer === "waiting" || answer === "stuck";
 }
 
 function time(d: Date): number {
@@ -170,7 +173,15 @@ export function chooseCheckins(threads: IThread[], ctx: Ctx, history: History, m
   planned.sort(
     (a, b) => promised(a) - promised(b) || TIER_RANK[a.tier] - TIER_RANK[b.tier] || withinTier(a, b, ctx)
   );
-  return planned.slice(0, max);
+  // One stuck or waiting thread a day, unless it was promised: two would take every slot, every day.
+  const blocked = (p: Planned) => p.tier === "stuck" || p.tier === "waiting";
+  const chosen: Planned[] = [];
+  for (const p of planned) {
+    if (chosen.length === max) break;
+    if (blocked(p) && promised(p) && chosen.some(blocked)) continue;
+    chosen.push(p);
+  }
+  return chosen;
 }
 
 export interface Line {
@@ -195,9 +206,9 @@ function stepLine(t: IThread, evening: boolean, seed: number): Line {
   const r = ref(t);
   const replies = [STEP_DONE, R.notYet, R.stuck, R.allDone];
   if (!startsWithVerb(step)) {
-    return { text: `Next step on ${r}${evening ? " this morning" : ""}: ${step}. Done?`, replies };
+    return { text: `Next step on ${r}${evening ? " today" : ""}: ${step}. Done?`, replies };
   }
-  if (evening) return { text: `This morning the next step on ${r} was to ${step}. Done?`, replies };
+  if (evening) return { text: `Earlier today the next step on ${r} was to ${step}. Done?`, replies };
   return {
     text: pick(
       [`Next step on ${r} was to ${step}. Done?`, `Did you get to ${gerundPhrase(step)}? It was the next step on ${r}.`],
@@ -207,9 +218,10 @@ function stepLine(t: IThread, evening: boolean, seed: number): Line {
   };
 }
 
-/** The morning check-in for a planned thread. */
-export function checkinLine(p: Planned, ctx: Ctx, seed: number): Line {
+/** The check-in for a planned thread. By evening, a habit or an event today has already happened or hasn't. */
+export function checkinLine(p: Planned, ctx: Ctx, seed: number, evening = false): Line {
   const t = p.thread;
+  if (evening && (p.tier === "habit" || (p.tier === "event-today" && t.kind === "event"))) return eveningLine(t, undefined, ctx, seed);
   const r = ref(t);
   const R0 = capFirst(r);
   const activity = refIsActivity(t);
@@ -225,7 +237,7 @@ export function checkinLine(p: Planned, ctx: Ctx, seed: number): Line {
         }
         return { text: `How's ${r} been since ${since(when)}?`, replies };
       }
-      const replies = [R.unstuck, R.stillStuck, R.done, R.parkIt];
+      const replies = t.kind === "person" ? [R.unstuck, R.stillStuck, R.parkIt] : [R.unstuck, R.stillStuck, R.done, R.parkIt];
       if (note && isShortPhrase(note)) {
         const options = [`${when} ${note} held up ${r}. Still the case?`];
         if (!activity) options.push(`${when} ${r} was stuck on ${note}. Any movement?`);
@@ -255,6 +267,7 @@ export function checkinLine(p: Planned, ctx: Ctx, seed: number): Line {
     }
 
     case "event-today":
+      if (t.kind !== "event") return { text: `${R0} is due today. How's it looking?`, replies: [R.done, R.workingOnIt, R.stuck, R.later] };
       return {
         text: pick([`${R0} is today. All set?`, `Today's the day for ${r}. All set?`], seed),
         replies: [R.ready, R.notQuite, R.later],
@@ -263,6 +276,7 @@ export function checkinLine(p: Planned, ctx: Ctx, seed: number): Line {
     case "event-soon": {
       const due = dueIn(t, ctx) ?? 1;
       const on = due === 1 ? "tomorrow" : `on ${weekdayOf(addDays(ctx.day, due))}`;
+      if (t.kind !== "event" && !t.nextStep) return { text: `${R0} is due ${on}. How's it going?`, replies: [R.onTrack, R.behind, R.later] };
       if (t.nextStep) {
         const step = stepText(t.nextStep);
         return {
@@ -279,9 +293,10 @@ export function checkinLine(p: Planned, ctx: Ctx, seed: number): Line {
     case "event-past": {
       const due = dueIn(t, ctx) ?? -1;
       const was = due === -1 ? "yesterday" : `on ${weekdayOf(addDays(ctx.day, due))}`;
+      if (t.kind !== "event") return { text: `${R0} was due ${was}. Did it get done?`, replies: [R.done, R.workingOnIt, R.later] };
       return {
         text: pick([`How did ${r} go?`, `${R0} was ${was}. How did it go?`], seed),
-        replies: [R.wentWell, R.didntHappen, R.later],
+        replies: [R.wentWell, R.rough, R.didntHappen, R.later],
       };
     }
 
@@ -352,24 +367,24 @@ export function threadFact(t: IThread, ctx: Ctx): string {
   return `${R0} last came up ${when.charAt(0).toLowerCase()}${when.slice(1)}.`;
 }
 
-/** The evening follow-up on something from this morning's conversation. */
+/** The evening follow-up on something from earlier in the day's conversation. */
 export function eveningLine(t: IThread, morningAnswer: string | null | undefined, ctx: Ctx, seed: number): Line {
   const r = ref(t);
   const activity = refIsActivity(t);
-  if (t.kind === "event" && dueIn(t, ctx) === 0) return { text: `How did ${r} go?`, replies: [R.wentWell, R.didntHappen, R.later] };
+  if (t.kind === "event" && dueIn(t, ctx) === 0) return { text: `How did ${r} go?`, replies: [R.wentWell, R.rough, R.didntHappen, R.later] };
   if (t.kind === "habit") return { text: `Did ${r} happen today?`, replies: [R.done, R.notYet, R.pauseIt] };
   if (t.status === "stuck") {
-    const options = [`Any movement on ${r} since this morning?`];
-    if (!activity) options.push(`This morning ${r} was stuck. Any movement since?`);
+    const options = [`Any movement on ${r} today?`];
+    if (!activity) options.push(`${capFirst(r)} was stuck earlier. Any movement since?`);
     return { text: pick(options, seed), replies: [R.unstuck, R.stillStuck, R.done, R.parkIt] };
   }
-  if (t.status === "waiting") return { text: `Any word on ${r} since this morning?`, replies: waitingReplies(t) };
+  if (t.status === "waiting") return { text: `Any word on ${r} yet?`, replies: waitingReplies(t) };
   if (t.nextStep) return stepLine(t, true, seed);
   if (morningAnswer === undefined) {
     return { text: `You mentioned ${r} today. Where are you with it?`, replies: [R.moving, R.stuck, R.waiting, R.done] };
   }
   if (morningAnswer === null) {
-    return { text: `This morning I asked about ${r}. Where did it end up?`, replies: [R.moving, R.stuck, R.waiting, R.done] };
+    return { text: `I asked about ${r} earlier. Where did it end up?`, replies: [R.moving, R.stuck, R.waiting, R.done] };
   }
   return {
     text: pick([`How far did ${r} get today?`, `Where did ${r} end up today?`], seed),

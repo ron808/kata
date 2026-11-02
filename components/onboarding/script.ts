@@ -109,19 +109,19 @@ export function roleInfo(key: RoleKey) {
 export const FOCUS_IDEAS: Record<RoleKey, string[]> = {
   developer: ["Next release", "Code reviews", "Side project", "Learning Rust", "Gym"],
   designer: ["Portfolio refresh", "Client project", "Design review", "Daily sketching", "Gym"],
-  founder: ["Fundraising", "Hiring", "Customer calls", "Launch plan", "Sleep"],
+  founder: ["Fundraising", "Hiring", "Customer calls", "Product launch", "Sleep routine"],
   freelancer: ["Client project", "Send invoices", "Find new work", "Update my portfolio", "Taxes"],
   teacher: ["Lesson planning", "Marking", "Parents’ evening", "School trip", "Weekend rest"],
   healthcare: ["Next shift", "Training course", "Rest days", "Paperwork", "Proper meals"],
-  shift_worker: ["Next rota", "Sleep after nights", "Saving up", "Day off plans", "Learning to drive"],
+  shift_worker: ["Next rota", "Sleep routine", "Saving up", "Day off plans", "Learning to drive"],
   creative: ["Current piece", "Show or gig", "Daily practice", "Selling my work", "Finding inspiration"],
-  student: ["Exams", "Thesis", "Problem sets", "Internship search", "Sleep"],
+  student: ["Exams", "Thesis", "Problem sets", "Internship search", "Sleep routine"],
   job_seeker: ["Job hunt", "Interview prep", "Portfolio", "Networking", "Gym"],
-  parent: ["School run", "Appointments", "Time for me", "Family dinners", "Paperwork"],
-  athlete: ["Race day", "Training plan", "Rest days", "Stretching", "Eating well"],
-  wellbeing: ["Sleep earlier", "Walk daily", "Drink water", "Call a friend", "Less screen time"],
-  retired: ["Garden", "Seeing friends", "Walk daily", "A trip", "Learning something new"],
-  custom: ["Side project", "Reading", "Gym", "Sleep", "Family time"],
+  parent: ["School run", "Appointments", "Time to myself", "Family dinners", "Paperwork"],
+  athlete: ["Race day", "Training plan", "Rest days", "Stretching", "Eat well"],
+  wellbeing: ["Sleep earlier", "Walk daily", "Drink more water daily", "Call a friend", "Screen time"],
+  retired: ["Garden", "Time with friends", "Walk daily", "A trip", "A new skill"],
+  custom: ["Side project", "Reading", "Gym", "Sleep routine", "Family time"],
 };
 
 /** Interests that suit each role go first; the rest of the question bank's tags follow. */

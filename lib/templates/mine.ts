@@ -1,9 +1,26 @@
 import { Types } from "mongoose";
+import { nanoid } from "nanoid";
 import { Entry } from "@/lib/db/models/Entry";
-import { Template } from "@/lib/db/models/Template";
+import { Template, type ITemplate } from "@/lib/db/models/Template";
 import { User } from "@/lib/db/models/User";
 import type { OwnPageT } from "@/lib/types";
 import { isoDay } from "@/lib/utils/dates";
+
+/** The writer's active page, made from a one-question starter if they skipped choosing one. */
+export async function ensurePage(userId: string): Promise<ITemplate | null> {
+  const user = await User.findById(userId).select("activeTemplateId").lean();
+  const active = user?.activeTemplateId ? await Template.findById(user.activeTemplateId).lean() : null;
+  if (active) return active;
+  const created = await Template.create({
+    userId,
+    name: "My daily page",
+    description: "",
+    tags: [],
+    fields: [{ id: nanoid(8), type: "long_text", label: "How was today?", required: true, order: 0, config: { placeholder: "Write whatever feels right." } }],
+  });
+  await User.findByIdAndUpdate(userId, { activeTemplateId: created._id });
+  return Template.findById(created._id).lean();
+}
 
 /**
  * Every page layout the writer has made or copied, today's first, then the latest. Making or

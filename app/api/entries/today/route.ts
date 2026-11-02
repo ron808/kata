@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/db/mongoose";
 import { Entry } from "@/lib/db/models/Entry";
 import { handleError, requireUser } from "@/lib/api";
-import { todayUtcMidnight } from "@/lib/utils/dates";
+import { User } from "@/lib/db/models/User";
+import { todayIn, validTimeZone } from "@/lib/companion/time";
 
 export async function GET() {
   try {
@@ -10,9 +11,10 @@ export async function GET() {
     if (response) return response;
     await connectDB();
 
+    const user = await User.findById(session.user.id).select("timezone").lean();
     const entry = await Entry.findOne({
       userId: session.user.id,
-      date: todayUtcMidnight(),
+      date: todayIn(validTimeZone(user?.timezone)),
     }).lean();
 
     if (!entry) return NextResponse.json({ entry: null });

@@ -1,7 +1,10 @@
 /**
- * Calendar days as yyyy-mm-dd strings in the writer's own time zone. Kata's
- * day turns over at the writer's midnight, not the server's.
+ * Days as yyyy-mm-dd strings in the writer's own time zone. A writer's day ends when they go to
+ * bed, not at midnight: until 4am it's still the day they've been living, so 1am belongs to the
+ * evening before and "tomorrow" means after they've slept.
  */
+
+const DAY_TURNS_AT = 4;
 
 export function validTimeZone(timeZone: string | null | undefined): string {
   if (!timeZone) return "UTC";
@@ -15,7 +18,7 @@ export function validTimeZone(timeZone: string | null | undefined): string {
 
 const formatters = new Map<string, Intl.DateTimeFormat>();
 
-/** The calendar day at `at` in `timeZone` (pass a zone from validTimeZone). */
+/** The writer's day at `at` in `timeZone` (pass a zone from validTimeZone). */
 export function localDay(timeZone: string, at: Date = new Date()): string {
   let f = formatters.get(timeZone);
   if (!f) {
@@ -27,7 +30,8 @@ export function localDay(timeZone: string, at: Date = new Date()): string {
     });
     formatters.set(timeZone, f);
   }
-  const parts = Object.fromEntries(f.formatToParts(at).map((p) => [p.type, p.value]));
+  const turned = new Date(new Date(at).getTime() - DAY_TURNS_AT * 3_600_000);
+  const parts = Object.fromEntries(f.formatToParts(turned).map((p) => [p.type, p.value]));
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
@@ -50,6 +54,19 @@ export function dayDiff(a: string, b: string): number {
 /** The day as a UTC-midnight Date, the way Entry.date and Thread.dueAt store calendar days. */
 export function dayToDate(day: string): Date {
   return toUtc(day);
+}
+
+/** The writer's today as a UTC-midnight Date, the way Entry.date stores days. */
+export function todayIn(timeZone: string, at: Date = new Date()): Date {
+  return dayToDate(localDay(timeZone, at));
+}
+
+/**
+ * The day a page opens on. Before noon, what there is to write about is the day just lived,
+ * until its page is written.
+ */
+export function pageDayFor(today: string, hour: number, yesterdayDone: boolean): string {
+  return hour >= DAY_TURNS_AT && hour < 12 && !yesterdayDone ? addDays(today, -1) : today;
 }
 
 /** The calendar day a UTC-midnight date stands for. */

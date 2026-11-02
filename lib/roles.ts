@@ -205,7 +205,7 @@ export const ROLE_PRESETS: RolePreset[] = [
       },
       {
         type: "long_text",
-        label: "What didn’t, and why?",
+        label: "What didn’t land today, and why?",
         required: false,
         config: {},
       },
@@ -337,7 +337,7 @@ export const ROLE_PRESETS: RolePreset[] = [
       },
       {
         type: "rating",
-        label: "How it went",
+        label: "How the making went",
         required: false,
         config: {},
       },
@@ -375,7 +375,7 @@ export const ROLE_PRESETS: RolePreset[] = [
       },
       {
         type: "rating",
-        label: "Confidence",
+        label: "How confident I feel",
         required: false,
         config: {},
       },

@@ -16,8 +16,9 @@ export function salutation(hour: number, first: string, seed: number): string {
   return pick([`Hi${name}.`, `Hello${name}.`], seed);
 }
 
+/** From five, until the day turns at 4am. */
 export function isEvening(hour: number): boolean {
-  return hour >= 17 || hour < 5;
+  return hour >= 17 || hour < 4;
 }
 
 export interface GreetingFacts {
@@ -51,7 +52,7 @@ export function contextLine(facts: GreetingFacts, day: string, seed: number): st
     const gap = dayDiff(day, facts.lastPageDay);
     if (gap >= 2) lines.push(`Your last page was on ${gap < 7 ? weekdayOf(facts.lastPageDay) : monthDayOf(facts.lastPageDay)}.`);
   }
-  if (facts.pages === 0) lines.push("Today could be your first page.");
+  if (facts.pages === 0) lines.push("Your first page is ready when you are.");
   if (facts.yesterdayWords && !facts.yesterdayTopics.length) {
     lines.push(`Yesterday's page ran to ${facts.yesterdayWords} word${facts.yesterdayWords === 1 ? "" : "s"}.`);
   }
@@ -134,13 +135,17 @@ export const followUp = {
     pick([`Nice work on ${r}. Share it on your profile?`, `That's ${r} done. Want to share it on your profile?`], seed),
   shared: "Shared on your profile. What's next?",
   kept: "Kept here. What's next?",
-  habit: (streak: number, seed: number) =>
+  habit: (streak: number, first: boolean, seed: number) =>
     streak <= 1
-      ? "Done. That's day one."
+      ? first
+        ? "Done. That's day one."
+        : "Done."
       : pick([`Done. That's ${count(streak)} days in a row.`, `Good. ${capFirst(count(streak))} in a row now.`], seed),
   wentWell: "Glad it went well. What's next?",
+  rough: "Sorry it was rough. It's off your list now.",
+  eventDone: "Noted. What's next?",
   stepDone: (r: string) => `Good. What's the next step on ${r}?`,
-  eventSoon: (weekday: string) => `Good. Anything left to do before ${weekday}?`,
+  eventSoon: (weekday: string) => `Good. I'll check back before ${weekday}.`,
   prepDone: (when: string) => (when === "today" ? "Good. One less thing before it starts." : `Good. One less thing before ${when}.`),
   allSet: "Good. You're all set, then.",
   eventToday: "Good luck with it. I'll ask how it went.",
@@ -153,6 +158,7 @@ export const followUp = {
   waitingKnown: "Okay. I'll ask again tomorrow.",
   paused: "Parked. I'll stop asking about it.",
   later: (seed: number) => pick(["Okay. I'll ask another day.", "Sure, another day."], seed),
+  notYet: "Okay. No rush.",
   gone: "That one isn't on your list any more.",
 };
 
@@ -167,6 +173,7 @@ export const ack = {
     pick([`I'll keep track of ${list}.`, `Noted. I'm keeping track of ${list} now.`], seed),
   added: (list: string) => `Added to ${list}.`,
   noRush: "No rush. Tell me when you know.",
+  onThreads: "I can't change that right now. You can on the Threads page.",
   noted: (seed: number) => pick(["Noted.", "Got it.", "Thanks, noted."], seed),
   heavy: (seed: number) => pick(["That sounds like a lot. Keep today small if you can.", "Noted. Go easy on yourself today."], seed),
   glad: "Good to hear.",

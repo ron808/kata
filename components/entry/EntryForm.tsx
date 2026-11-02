@@ -16,7 +16,7 @@ import { Button } from "@/components/shared/Button";
 import { useCompanion } from "@/components/shared/Companion";
 import { Icon } from "@/components/shared/Icon";
 import { Seal } from "@/components/shared/Seal";
-import { Today } from "@/components/shared/Today";
+import { asYesterday, tooEarly } from "@/lib/questions/tense";
 import { useToast } from "@/components/shared/Toast";
 import { countWords } from "@/lib/utils/streaks";
 import type {
@@ -34,7 +34,14 @@ interface EntryFormProps {
   tagHues?: Record<string, number>;
   initialFields?: EntryField[];
   entryId?: string;
-  date?: string;
+  /** The day this page is about, yyyy-mm-dd. */
+  date: string;
+  /** It's yesterday's page, so what looks back reads that way. */
+  past: boolean;
+  /** The hour where the writer is, for what's too early to ask. */
+  hour: number;
+  /** The way to the other open day. */
+  other: { href: string; label: string } | null;
   weekday: string;
   monthDay: string;
   pageNumber: number;
@@ -89,6 +96,9 @@ export function EntryForm({
   initialFields,
   entryId,
   date,
+  past,
+  hour,
+  other,
   weekday,
   monthDay,
   pageNumber,
@@ -130,10 +140,23 @@ export function EntryForm({
   const [savedPayload, setSavedPayload] = useState(() =>
     serialize(initialValues(template, asks, initialFields))
   );
+  // What can't be answered yet ("What did you eat for dinner?" at nine) waits, unless it's been answered.
+  const [later, setLater] = useState<Set<string>>(
+    () =>
+      new Set(
+        past
+          ? []
+          : template.fields
+              .filter((f) => f.type !== "divider" && tooEarly(f.label, hour) && !filled(initialFields?.find((x) => x.fieldId === f.id)?.value))
+              .map((f) => f.id)
+      )
+  );
+  const say = (text: string) => (past ? asYesterday(text) : text);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [sealed, setSealed] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saved = useRef(Boolean(entryId));
   // Kata's questions start open once answered.
   const [openAsks, setOpenAsks] = useState<Set<string>>(
     () => new Set(asks.filter((a) => filled(initialFields?.find((f) => f.fieldId === a.fieldId)?.value)).map((a) => a.fieldId))
@@ -192,6 +215,11 @@ export function EntryForm({
     if (saving) return;
     const serialized = payload;
     if (serialized === savedPayload && opts.silent) return;
+    // Nothing written and nothing saved: closing isn't writing, so it costs no page and no streak.
+    if (!saved.current && !Object.values(values).some(filled)) {
+      if (opts.redirectAfter) router.push("/dashboard");
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch("/api/entries", {
@@ -204,6 +232,7 @@ export function EntryForm({
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(data.error ?? "Save failed");
       }
+      saved.current = true;
       setSavedPayload(serialized);
       setSavedAt(Date.now());
       if (!opts.silent) toast("Page saved", "success");
@@ -250,9 +279,10 @@ export function EntryForm({
           ? "Saved"
           : "Not saved yet";
 
+  const waiting = template.fields.filter((f) => later.has(f.id));
   const outlineFields = template.fields
-    .filter((f) => f.type !== "divider")
-    .map((f) => ({ id: f.id, label: f.label, done: filled(values[f.id]) }));
+    .filter((f) => f.type !== "divider" && !later.has(f.id))
+    .map((f) => ({ id: f.id, label: say(f.label), done: filled(values[f.id]) }));
   const outlineAsks = asks.map((a) => ({ id: a.fieldId, label: `#${a.tag}`, hue: a.hue, done: filled(values[a.fieldId]) }));
 
   return (
@@ -265,24 +295,25 @@ export function EntryForm({
                 <span className="inline-flex -rotate-[3deg] items-center rounded-full border-2 border-edge bg-surface px-3 py-0.5 font-display text-[1.15rem] shadow-sticker-sm">
                   Page {pageNumber.toLocaleString("en-US")}
                 </span>
-                {entryId ? <span className="text-[0.9375rem] font-medium text-ink/70">Started earlier today</span> : null}
+                {entryId ? <span className="text-[0.9375rem] font-medium text-ink/70">{past ? "Started earlier" : "Started earlier today"}</span> : null}
               </p>
               <h1 className="mt-4 font-display text-display-l">
-                <span className="block">
-                  <Today initial={weekday} style="weekday" />,
-                </span>
-                <span className="mark">
-                  <Today initial={monthDay} style="monthDay" />
-                </span>
+                <span className="block">{past ? "Yesterday," : `${weekday},`}</span>
+                <span className="mark">{past ? `${weekday}, ${monthDay}` : monthDay}</span>
               </h1>
               <p className="mt-5 max-w-[34rem] text-lede text-ink/75">
-                Write what mattered. {name} reads the page when you save it and keeps track of what’s moving.
+                {past ? "While you still remember it." : "Write what mattered."} {name} reads the page when you save it and keeps track of what’s moving.
               </p>
+              {other ? (
+                <Link href={other.href} onClick={() => dirty && void doSave({ silent: true })} className="link mt-3 inline-flex min-h-11 items-center text-[0.9375rem] font-semibold">
+                  {other.label}
+                </Link>
+              ) : null}
             </div>
             <Link
               href="/dashboard"
               onClick={() => dirty && void doSave({ silent: true })}
-              aria-label="Close today’s page"
+              aria-label="Close this page"
               className="chip !h-11 !w-11 !min-h-0 shrink-0 !px-0"
             >
               <Icon name="close" className="h-5 w-5" />
@@ -290,7 +321,7 @@ export function EntryForm({
           </header>
 
           <div className="mt-10 grid grid-cols-1 gap-6">
-            {template.fields.map((field, idx) =>
+            {template.fields.filter((f) => !later.has(f.id)).map((field, idx) =>
               field.type === "divider" ? (
                 <div key={field.id} className="pt-4">
                   <FieldRenderer field={field} value={null} />
@@ -305,25 +336,55 @@ export function EntryForm({
                   <FieldPrompt
                     as={isLabelable(field) ? "label" : "p"}
                     htmlFor={fieldInputId(field)}
-                    required={field.required}
                   >
-                    {field.label}
+                    {say(field.label)}
                   </FieldPrompt>
                   <div className="mt-4">
-                    <FieldRenderer field={field} value={values[field.id]} onChange={(v) => setValue(field.id, v)} />
+                    <FieldRenderer field={{ ...field, label: say(field.label) }} value={values[field.id]} onChange={(v) => setValue(field.id, v)} />
                   </div>
                 </div>
               )
             )}
           </div>
 
+          {waiting.length > 0 ? (
+            <section aria-labelledby="later-today" className="mt-14">
+              <h2 id="later-today" className="font-display text-display-s">
+                Later today
+              </h2>
+              <p className="mt-1.5 max-w-[34rem] text-[0.9375rem] text-ink/70">
+                These make more sense once more of the day has happened. They’ll be here, or answer one now.
+              </p>
+              <ul className="card mt-6 grid grid-cols-1 gap-2 p-3 sm:p-4">
+                {waiting.map((f) => (
+                  <li key={f.id} className="well flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+                    <span className="min-w-0 flex-1 basis-56 font-semibold">{f.label}</span>
+                    <button
+                      type="button"
+                      className="chip chip-sm"
+                      onClick={() =>
+                        setLater((prev) => {
+                          const next = new Set(prev);
+                          next.delete(f.id);
+                          return next;
+                        })
+                      }
+                    >
+                      Answer now
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
           {earlier.length > 0 ? (
             <section aria-labelledby="earlier-today" className="mt-14">
               <h2 id="earlier-today" className="font-display text-display-s">
-                Earlier today
+                {past ? "Written earlier" : "Earlier today"}
               </h2>
               <p className="mt-1.5 max-w-[34rem] text-[0.9375rem] text-ink/70">
-                What you wrote on the page you used before switching. It stays with today’s page.
+                What you wrote on the page you used before switching. It stays with this day’s page.
               </p>
               <ul className="mt-6 grid grid-cols-1 gap-4">
                 {earlier.map((f) => (
@@ -347,14 +408,14 @@ export function EntryForm({
                 </h2>
               </div>
               <p className="bubble-kata mt-4 w-fit max-w-[34rem] px-4 py-3 text-[0.9375rem] leading-snug">
-                {NUMBER_WORDS[asks.length] ?? asks.length} {asks.length === 1 ? "question" : "questions"} from me today.
+                {NUMBER_WORDS[asks.length] ?? asks.length} {asks.length === 1 ? "question" : "questions"} from me{past ? " about yesterday" : " today"}.
                 Answer any you like: each answer files the page under its tag.
               </p>
               <ul className="mt-8 grid grid-cols-1 gap-6">
                 {asks.map((a, i) => (
                   <AskCard
                     key={a.fieldId}
-                    ask={a}
+                    ask={{ ...a, text: say(a.text) }}
                     index={i}
                     value={(values[a.fieldId] as string) ?? ""}
                     onChange={(v) => setValue(a.fieldId, v)}

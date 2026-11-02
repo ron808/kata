@@ -16,9 +16,11 @@ async function generateForUser(
   kind: "weekly" | "monthly"
 ) {
   const today = todayUtcMidnight();
-  const periodEnd = today;
+  // A month's letter is about the month that just ended, whichever length it was.
+  const monthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+  const periodEnd = kind === "weekly" ? today : monthStart;
   const periodStart =
-    kind === "weekly" ? addDays(today, -7) : addDays(today, -30);
+    kind === "weekly" ? addDays(today, -7) : new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
 
   const entries = await Entry.find({
     userId: user._id,
@@ -31,7 +33,7 @@ async function generateForUser(
 
   const wordCount = entries.reduce((s, e) => s + e.wordCount, 0);
 
-  const monthName = today.toLocaleDateString("en-US", {
+  const monthName = periodStart.toLocaleDateString("en-US", {
     month: "long",
     timeZone: "UTC",
   });
@@ -43,7 +45,7 @@ async function generateForUser(
           name: user.name,
           role: user.role,
           month: monthName,
-          year: today.getUTCFullYear(),
+          year: periodStart.getUTCFullYear(),
           entries,
         });
 

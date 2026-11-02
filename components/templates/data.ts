@@ -42,10 +42,13 @@ export const ROLE_FILTERS: { key: Exclude<RoleKey, "custom">; label: string; tag
   { key: "student", label: "Students", tags: ["study", "school", "student", "learning", "university", "thesis", "research"] },
   { key: "teacher", label: "Teachers", tags: ["teaching", "teacher", "education", "classroom"] },
   { key: "healthcare", label: "Healthcare", tags: ["healthcare", "nursing", "nurse", "shifts"] },
+  { key: "freelancer", label: "Freelancers", tags: ["freelance", "freelancer", "clients"] },
+  { key: "shift_worker", label: "Shift work", tags: ["shifts", "shift work", "rota"] },
   { key: "creative", label: "Makers", tags: ["maker", "music", "art", "craft", "writing"] },
   { key: "parent", label: "Parents and carers", tags: ["family", "parenting", "kids", "caring"] },
   { key: "athlete", label: "Training", tags: ["fitness", "training", "running", "sport"] },
   { key: "wellbeing", label: "Wellbeing", tags: ["wellbeing", "self-care", "rest", "mood"] },
+  { key: "retired", label: "Retired", tags: ["retired", "retirement", "garden"] },
 ];
 
 export const normTag = (t: string) => t.trim().toLowerCase().replace(/^#/, "");

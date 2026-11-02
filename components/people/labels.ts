@@ -3,7 +3,7 @@ import type { MomentKind, ReactionKind } from "@/lib/types";
 /** How a moment's kind reads wherever it's shown. */
 export const MOMENT_LABEL: Record<MomentKind, string> = {
   win: "Win",
-  ship: "Shipped",
+  ship: "Finished",
   thought: "Thought",
   question: "Question",
   milestone: "Milestone",

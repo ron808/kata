@@ -15,6 +15,7 @@ import { interestChoices, type CheckIn } from "@/components/onboarding/script";
 import { ChangePasswordForm } from "@/components/settings/ChangePasswordForm";
 import { INTEREST_TAGS } from "@/components/settings/interestTags";
 import { KataSettings } from "@/components/settings/KataSettings";
+import { RoleField } from "@/components/settings/RoleField";
 import { ProfileForm } from "@/components/settings/ProfileForm";
 import { PublishToggle } from "@/components/settings/PublishToggle";
 import { SignOutButton } from "@/components/settings/SignOutButton";
@@ -67,6 +68,7 @@ export default async function SettingsPage() {
               hue={me.hue}
               suggestedHandle={me.suggestedHandle ?? null}
             />
+            <RoleField initial={user.role ?? "Custom"} />
           </Card>
 
           <section id="kata" aria-labelledby="kata-title" className="card scroll-mt-20 p-5 sm:p-7">

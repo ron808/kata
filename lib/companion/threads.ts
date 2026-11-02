@@ -140,7 +140,7 @@ function displayRank(t: IThread, ctx: Ctx): number {
   if (t.status === "stuck") return 0;
   if (t.status === "waiting") return 1;
   const due = dueIn(t, ctx);
-  if (t.status === "moving" && t.kind === "event" && due !== null && due >= 0 && due <= 3) return 2;
+  if (t.status === "moving" && due !== null && due >= 0 && due <= 3) return 2;
   if (t.status === "moving") return 3;
   if (t.status === "done") return 4;
   return 5;

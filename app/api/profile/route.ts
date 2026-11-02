@@ -7,6 +7,7 @@ import { hueOf } from "@/lib/social/dto";
 import { HANDLE_TAKEN, checkHandle } from "@/lib/social/handles";
 import { loadMe } from "@/lib/social/load";
 import { ProfilePatchSchema, parseBody } from "@/lib/social/schemas";
+import { ROLE_PRESETS } from "@/lib/roles";
 
 export async function GET() {
   try {
@@ -31,7 +32,7 @@ export async function PATCH(request: Request) {
     const user = await User.findById(session.user.id).select("handle isPublic hue").lean();
     if (!user) return jsonError("Account not found.", 404);
 
-    const set: Partial<Pick<IUser, "handle" | "name" | "bio" | "isPublic" | "interests" | "hue">> = {};
+    const set: Partial<Pick<IUser, "handle" | "name" | "bio" | "isPublic" | "interests" | "hue" | "role">> = {};
     if (data.handle !== undefined) {
       const check = await checkHandle(data.handle, session.user.id);
       if (!check.ok) return jsonError(check.reason, check.taken ? 409 : 400);
@@ -39,6 +40,10 @@ export async function PATCH(request: Request) {
     }
     if (data.name !== undefined) set.name = data.name;
     if (data.bio !== undefined) set.bio = data.bio;
+    if (data.role !== undefined) {
+      if (!ROLE_PRESETS.some((p) => p.name === data.role)) return jsonError("Choose one from the list.", 400);
+      set.role = data.role;
+    }
     if (data.interests !== undefined) set.interests = data.interests;
     if (data.isPublic !== undefined) set.isPublic = data.isPublic;
     if ((set.isPublic ?? user.isPublic) && !(set.handle ?? user.handle)) {

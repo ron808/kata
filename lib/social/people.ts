@@ -73,7 +73,9 @@ export async function discoverPeople(
   if (role) filter.role = { $in: roleNames(role) };
   if (tag) filter.interests = exactly(tag);
 
-  const users = await User.find(filter)
+  // Their exact handle finds them even unlisted: that's why they picked one.
+  const exact = q && handle && !role && !tag ? { handle: q.replace(/^@/, "").toLowerCase(), _id: { $ne: objectId(viewerId) } } : null;
+  const users = await User.find(exact ? { $or: [filter, exact] } : filter)
     .select(PERSON_FIELDS)
     .sort({ followerCount: -1, _id: 1 })
     .limit(SEARCH_LIMIT)

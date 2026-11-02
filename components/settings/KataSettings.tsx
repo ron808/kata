@@ -156,9 +156,10 @@ export function KataSettings({
         <h3 className="font-semibold">How {name} thinks</h3>
         {ai ? (
           <p className="mt-1 text-sm text-ink/70">
-            {name} writes its replies with an AI model run by Groq. When you talk to it, what you say, your threads, what it
-            remembers, your last few pages and, when you ask about them, the posts on your screen go to Groq to write the
-            reply. {name} can get things wrong, and you can see or delete what it remembers on{" "}
+            {name} reads and replies with an AI model run by Groq. Each page you save goes to Groq, and so do the pages behind
+            your letters. When you talk to it, what you say, your threads, what it remembers, your last few pages and, when
+            you ask about them, the posts on your screen go there too. {name} can get things wrong, and you can see or delete
+            what it remembers on{" "}
             <Link href="/threads#memories" className="link font-semibold text-ink">
               Threads
             </Link>

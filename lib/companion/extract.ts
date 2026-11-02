@@ -60,7 +60,7 @@ const VAGUE = new Set([
   "nothing", "a lot", "lots", "a bit", "bits", "work", "work stuff", "it all", "the usual", "myself", "me",
   "home", "day", "week", "emails", "email", "admin", "chores", "errands", "meetings", "meeting", "calls",
   "call", "slack", "messages", "tasks", "todo", "todos", "to-dos", "list", "projects", "project",
-  "side project", "side projects", "reply", "answer", "news", "feedback", "results", "plan", "plans",
+  "side projects", "reply", "answer", "news", "feedback", "results", "plan", "plans",
   "sleep", "food", "lunch", "dinner", "breakfast", "coffee", "bed", "rest", "break", "bus", "train",
   "weekend", "bug", "bugs", "issue", "issues", "problem", "problems", "code", "coding", "life",
   "everything else", "hard", "thing", "up", "more", "less", "better", "worse", "progress", "time",
@@ -183,8 +183,11 @@ function parseDay(sentence: string, today?: string): string | null {
   if (/\b(?:today|tonight|this (?:morning|afternoon|evening))\b/.test(t)) return today;
   if (/\btomorrow\b/.test(t)) return addDays(today, 1);
   const wd = /\b(next\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/.exec(t);
-  if (wd && !wd[1]) {
-    const diff = (WEEKDAYS.indexOf(wd[2]) - dayToDate(today).getUTCDay() + 7) % 7;
+  if (wd) {
+    const dow = dayToDate(today).getUTCDay();
+    // "Next Friday": that day in the coming week, which starts on Monday.
+    if (wd[1]) return addDays(today, ((8 - dow) % 7 || 7) + (WEEKDAYS.indexOf(wd[2]) + 6) % 7);
+    const diff = (WEEKDAYS.indexOf(wd[2]) - dow + 7) % 7;
     return diff === 0 ? null : addDays(today, diff);
   }
   const md =

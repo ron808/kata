@@ -107,7 +107,8 @@ export async function askBreakdown(ctx: Ctx, p: Period): Promise<IBreakdown> {
 export async function ensureWeekly(ctx: Ctx): Promise<IBreakdown | null> {
   const from = addDays(weekStart(ctx.day), -7);
   const to = addDays(from, 6);
-  if (to < joinDay(ctx)) return null;
+  // A score needs a week to score: joining on a Sunday night isn't one.
+  if (dayDiff(to, joinDay(ctx)) < 2) return null;
   if (await Breakdown.exists({ userId: ctx.userId, kind: "weekly", from, to })) return null;
   try {
     const made = await makeBreakdown(ctx, { from, to, unit: "week" }, "weekly");

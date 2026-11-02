@@ -16,7 +16,7 @@ export function FormPreview({ fields }: { fields: TemplateField[] }) {
       {fields.map((field) => (
         <div key={field.id} className="space-y-3">
           {field.type !== "divider" ? (
-            <FieldPrompt as={isLabelable(field) ? "label" : "p"} htmlFor={fieldInputId(field)} required={field.required}>
+            <FieldPrompt as={isLabelable(field) ? "label" : "p"} htmlFor={fieldInputId(field)}>
               {field.label}
             </FieldPrompt>
           ) : null}

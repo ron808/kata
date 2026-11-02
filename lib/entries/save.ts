@@ -2,8 +2,9 @@ import { Entry } from "@/lib/db/models/Entry";
 import { User } from "@/lib/db/models/User";
 import { isKataFieldId, parseKataFieldId } from "@/lib/questions/daily";
 import type { EntryField } from "@/lib/types";
-import { todayUtcMidnight, toUtcMidnight } from "@/lib/utils/dates";
-import { countWords, nextStreak } from "@/lib/utils/streaks";
+import { todayIn, validTimeZone } from "@/lib/companion/time";
+import { toUtcMidnight } from "@/lib/utils/dates";
+import { countWords, streakFromDates } from "@/lib/utils/streaks";
 
 const MAX_WORDS = 5000;
 
@@ -39,11 +40,11 @@ function answered(value: EntryField["value"]): boolean {
  * is saved: the page itself (POST /api/entries) and Maru writing on it both come through here.
  */
 export async function savePage(userId: string, input: { fields: EntryField[]; date?: string }): Promise<SavedPage> {
-  const date = input.date ? toUtcMidnight(input.date) : todayUtcMidnight();
-  if (date.getTime() > todayUtcMidnight().getTime()) throw new PageError("Cannot create an entry in the future.", 400);
-
   const user = await User.findById(userId).lean();
   if (!user) throw new PageError("User not found", 404);
+  const today = todayIn(validTimeZone(user.timezone));
+  const date = input.date ? toUtcMidnight(input.date) : today;
+  if (date.getTime() > today.getTime()) throw new PageError("Cannot create an entry in the future.", 400);
   if (!user.activeTemplateId) throw new PageError("No active template — finish onboarding first.", 400);
 
   const existing = await Entry.findOne({ userId, date });
@@ -89,10 +90,11 @@ export async function savePage(userId: string, input: { fields: EntryField[]; da
   }
 
   if (!existing) {
-    const streak = nextStreak(user.streak, user.lastEntryDate, date);
+    const days = await Entry.find({ userId }).select("date").sort({ date: -1 }).limit(400).lean();
+    const streak = streakFromDates(days.map((d) => d.date), today);
     await User.findByIdAndUpdate(userId, {
       $inc: { totalEntries: 1, totalWords: wordCount },
-      $set: { streak, longestStreak: Math.max(user.longestStreak, streak), lastEntryDate: date },
+      $set: { streak, longestStreak: Math.max(user.longestStreak, streak), lastEntryDate: days[0]?.date ?? date },
     });
   } else if (wordCount !== previousWordCount) {
     await User.findByIdAndUpdate(userId, { $inc: { totalWords: wordCount - previousWordCount } });

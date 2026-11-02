@@ -1,8 +1,15 @@
 import { AppPage, PageHeader } from "./AppPage";
 import { KataMark } from "./Avatar";
 
-/** Local setup: Kata can't reach MongoDB, so there's nowhere to keep pages yet. */
+/** Kata can't reach MongoDB. Setup steps are for whoever's running it locally, not for writers. */
 export function DbNotConfigured({ error }: { error?: string | null }) {
+  if (process.env.NODE_ENV === "production") {
+    return (
+      <AppPage width="text">
+        <PageHeader title="Kata can’t reach its database right now." lede="Reload in a moment." />
+      </AppPage>
+    );
+  }
   return (
     <AppPage width="text">
       <PageHeader

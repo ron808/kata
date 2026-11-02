@@ -5,6 +5,7 @@ import { Entry } from "@/lib/db/models/Entry";
 import { handleError, requireUser } from "@/lib/api";
 import { buildContributionGrid } from "@/lib/utils/dates";
 import { streakFromDates } from "@/lib/utils/streaks";
+import { todayIn, validTimeZone } from "@/lib/companion/time";
 
 export async function GET() {
   try {
@@ -20,7 +21,7 @@ export async function GET() {
       .sort({ date: -1 })
       .lean();
 
-    const recomputedStreak = streakFromDates(entries.map((e) => e.date));
+    const recomputedStreak = streakFromDates(entries.map((e) => e.date), todayIn(validTimeZone(user.timezone)));
     const grid = buildContributionGrid(
       entries.map((e) => ({
         date: e.date.toISOString(),

@@ -272,7 +272,7 @@ function PublicSwitch({
             <Icon name="eye" className="h-4 w-4" />
             What others see
           </dt>
-          <dd className="mt-1 text-ink/75">Your name, handle and bio, the moments you share, and threads you choose to show.</dd>
+          <dd className="mt-1 text-ink/75">Your name, handle, bio and what fills your days, the moments you share, and threads you choose to show.</dd>
         </div>
         <div>
           <dt className="flex items-center gap-1.5 font-semibold">

@@ -5,6 +5,7 @@ import { CHECK_INS, User, type IUser } from "@/lib/db/models/User";
 import { handleError, jsonError, requireUser } from "@/lib/api";
 import { COMPANION_NAME_MAX, NICKNAME_MAX, companionHueOf, companionNameOf, nicknameOf, tidyName } from "@/lib/companion/name";
 import { nameReceipts, noteNames } from "@/lib/companion/naming";
+import { validTimeZone } from "@/lib/companion/time";
 
 // The companion's own settings for the signed-in writer: when it checks in and the names
 // they use for each other. Interests live on /api/profile.
@@ -16,6 +17,8 @@ const KataSettingsSchema = z.object({
   nickname: z.string().max(NICKNAME_MAX * 2).optional(),
   /** The colour it wears: a hue 1–7, or null for vermilion. */
   companionHue: z.number().int().min(1).max(7).nullable().optional(),
+  /** Where they are now, from their device. */
+  timezone: z.string().max(60).optional(),
 });
 
 type Settings = Pick<IUser, "checkIn" | "companionName" | "nickname" | "name" | "companionHue">;
@@ -50,8 +53,9 @@ export async function PATCH(request: Request) {
     const data = KataSettingsSchema.parse(await request.json().catch(() => undefined));
     await connectDB();
 
-    const set: Partial<Pick<IUser, "checkIn" | "companionName" | "nickname" | "companionHue">> = {};
+    const set: Partial<Pick<IUser, "checkIn" | "companionName" | "nickname" | "companionHue" | "timezone">> = {};
     if (data.checkIn) set.checkIn = data.checkIn;
+    if (data.timezone && validTimeZone(data.timezone) === data.timezone) set.timezone = data.timezone;
     if (data.companionName !== undefined) set.companionName = tidyName(data.companionName, COMPANION_NAME_MAX);
     if (data.nickname !== undefined) set.nickname = tidyName(data.nickname, NICKNAME_MAX);
     if (data.companionHue !== undefined) set.companionHue = data.companionHue;

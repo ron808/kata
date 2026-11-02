@@ -35,7 +35,7 @@ export async function loadLetters(
   await connectDB();
   const now = new Date();
   const run = nextRun(type, now);
-  const since = addDays(run, type === "weekly" ? -7 : -30);
+  const since = type === "weekly" ? addDays(run, -7) : new Date(Date.UTC(run.getUTCFullYear(), run.getUTCMonth() - 1, 1));
   const [docs, recent] = await Promise.all([
     Digest.find({ userId, type }).sort({ createdAt: -1 }).limit(12).lean(),
     Entry.exists({ userId, date: { $gte: since, $lt: run } }),

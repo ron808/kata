@@ -12,9 +12,9 @@ export function LetterCard({ digest, companionName }: { digest: DigestSummary | 
       <aside className="flex items-start gap-4 rounded-lg border-2 border-dashed border-edge/50 p-4 sm:p-6">
         <MaruMark size={40} className="-rotate-6 opacity-70" />
         <div>
-          <p className="font-display text-[1.5rem] leading-[0.95]">Your next letter comes on Sunday.</p>
+          <p className="font-display text-[1.5rem] leading-[0.95]">Letters come on Sundays.</p>
           <p className="mt-2 text-ink/65">
-            {companionName} reads the week’s pages and writes back. Monthly letters arrive on the first.
+            If you’ve written that week, {companionName} reads the pages and writes back. Monthly letters arrive on the first.
           </p>
           <Link href="/digest/weekly" className="link mt-3 inline-flex min-h-11 items-center text-[0.9375rem] font-semibold">
             Past letters
@@ -26,7 +26,7 @@ export function LetterCard({ digest, companionName }: { digest: DigestSummary | 
   const weekly = digest.type === "weekly";
   return (
     <Link
-      href={weekly ? "/digest/weekly" : "/digest/monthly"}
+      href={`${weekly ? "/digest/weekly" : "/digest/monthly"}?letter=${digest._id}`}
       className="group chapter card press flex flex-col p-4 transition-[transform,box-shadow] duration-300 sm:p-6"
     >
       <div className="flex items-start justify-between gap-4">
@@ -41,7 +41,7 @@ export function LetterCard({ digest, companionName }: { digest: DigestSummary | 
       </p>
       <p className="mt-auto flex items-center justify-between gap-4 pt-5 text-sm text-ink/70">
         <span>
-          {formatRange(digest.periodStart, digest.periodEnd, !weekly)} · {digest.entryCount} pages
+          {formatRange(digest.periodStart, digest.periodEnd, !weekly)} · {digest.entryCount} {digest.entryCount === 1 ? "page" : "pages"}
         </span>
         <span className="inline-flex items-center gap-1.5 font-semibold text-ink">
           Read it

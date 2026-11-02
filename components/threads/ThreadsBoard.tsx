@@ -7,14 +7,13 @@ import { useCompanion } from "@/components/shared/Companion";
 import { Icon } from "@/components/shared/Icon";
 import { KIND_LABEL, STATUS_LABEL, Status } from "@/components/shared/Status";
 import { useToast } from "@/components/shared/Toast";
-import { metaWithToday, onYourMind, touchedPhrase } from "@/components/home/meta";
+import { metaWithToday, onYourMind, showsStatus, stepOn, stepsFor, touchedPhrase } from "@/components/home/meta";
 import { patchThread } from "@/components/home/MindCard";
 import { ThreadMap } from "@/components/home/ThreadMap";
-import type { ThreadKind, ThreadStatus, ThreadT } from "@/lib/types";
+import type { ThreadKind, ThreadT } from "@/lib/types";
 import { ThreadFields } from "./ThreadFields";
 
 const KINDS = Object.keys(KIND_LABEL) as ThreadKind[];
-const STATUSES = Object.keys(STATUS_LABEL) as ThreadStatus[];
 
 const GROUPS: { title: string; test: (t: ThreadT) => boolean }[] = [
   { title: "On your mind", test: (t) => t.status !== "done" && t.status !== "paused" },
@@ -92,7 +91,7 @@ export function ThreadsBoard({
       setTitle("");
       setKind(null);
       select(t._id);
-      toast(`${companionName} will ask about ${t.title}.`, "success");
+      toast(t.kind === "event" && !t.dueAt ? `Add a date and ${companionName} will ask about it.` : `${companionName} will ask about ${t.title}.`, "success");
     } catch (err) {
       toast(err instanceof Error ? err.message : "That didn’t save", "danger");
     } finally {
@@ -181,7 +180,7 @@ export function ThreadsBoard({
                           {t.shared ? " · on your profile" : ""}
                         </span>
                       </span>
-                      <Status status={t.status} />
+                      {showsStatus(t) ? <Status status={t.status} /> : null}
                       <Icon name="arrow-down" className={`h-4 w-4 shrink-0 text-ink/55 transition-transform ${open === t._id ? "rotate-180" : ""}`} />
                     </button>
                     {open === t._id ? (
@@ -290,16 +289,16 @@ function ThreadEditor({
       <div>
         <p className="mb-2 text-[0.875rem] font-semibold">Where it is</p>
         <div className="scale" role="group" aria-label={`Where ${t.title} is`}>
-          {STATUSES.map((s) => (
+          {stepsFor(t.kind).map((s) => (
             <button
-              key={s}
+              key={s.value}
               type="button"
               className="scale-step scale-row"
-              aria-pressed={t.status === s}
+              aria-pressed={stepOn(t, s.value, today, tz)}
               disabled={busy}
-              onClick={() => t.status !== s && save({ status: s })}
+              onClick={() => !stepOn(t, s.value, today, tz) && save({ status: s.value }, t.kind === "habit" && s.value === "done" ? `${t.title}: done for today.` : undefined)}
             >
-              {STATUS_LABEL[s]}
+              {s.label}
             </button>
           ))}
         </div>
@@ -402,7 +401,7 @@ function ThreadEditor({
           <Icon name={t.shared ? "check" : "eye"} className="h-4 w-4" />
           {t.shared ? "On your profile" : "Show on my profile"}
         </button>
-        <button type="button" className="chip chip-sm" disabled={busy} onClick={() => save({ archived: true }).then((s) => s && onRemoved())}>
+        <button type="button" className="chip chip-sm" disabled={busy} onClick={() => save({ archived: true }, `Archived. It comes back if you mention ${t.title} again.`).then((s) => s && onRemoved())}>
           Archive
         </button>
         <button type="button" className="chip chip-sm ml-auto !text-bad" disabled={busy} onClick={destroy} onBlur={() => setConfirming(false)}>

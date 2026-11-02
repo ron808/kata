@@ -28,7 +28,7 @@ function acceptable(out: string, original: string): boolean {
   );
 }
 
-export async function voiceCheckin(text: string, thread: IThread): Promise<string> {
+export async function voiceCheckin(text: string, thread: IThread, streak: number): Promise<string> {
   if (!isGroqConfigured()) return text;
   const facts = {
     title: thread.title,
@@ -36,7 +36,7 @@ export async function voiceCheckin(text: string, thread: IThread): Promise<strin
     status: thread.status,
     nextStep: thread.nextStep || null,
     lastNote: thread.lastNote || null,
-    streak: thread.kind === "habit" ? thread.streak : null,
+    streak: thread.kind === "habit" ? streak : null,
   };
   try {
     const completion = await complete(

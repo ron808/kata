@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, type ReactNode } from "react";
-import { Icon } from "@/components/shared/Icon";
+
 import type { TemplateField } from "@/lib/types";
 
 /** Id of a field's question input, so the builder can focus it (after adding, or on an error). */
@@ -158,25 +158,6 @@ export function FieldConfig({
           )}
         </Setting>
       )}
-
-      <button
-        type="button"
-        role="switch"
-        aria-checked={field.required}
-        onClick={() => onChange({ ...field, required: !field.required })}
-        className="chip"
-      >
-        <span
-          aria-hidden
-          className={`grid h-5 w-5 place-items-center rounded-full border-2 border-current transition-colors duration-300 ${
-            field.required ? "bg-on-sun text-sun" : ""
-          }`}
-        >
-          {field.required ? <Icon name="check" className="h-3 w-3" strokeWidth={3} /> : null}
-        </span>
-        Required
-        <span className="font-normal text-current/75 max-xs:sr-only">· marked with a dot</span>
-      </button>
     </div>
   );
 }

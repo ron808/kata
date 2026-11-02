@@ -17,7 +17,6 @@ import { follow, replyTo, shareMoment, unfollow } from "@/lib/social/actions";
 import { sendMessage } from "@/lib/social/messages";
 import { handleOf, normalizeHandle } from "@/lib/social/handles";
 import type { EntryField, FieldType, FieldValue, ReplyT } from "@/lib/types";
-import { todayUtcMidnight } from "@/lib/utils/dates";
 import type { EngineCtx } from "./engine";
 import { FIELDS_MAX, TRACKED_KINDS, fieldKey, guessFields, parseTrack, specText, valueText, valuesIn } from "./fields";
 import { applyInputs, complete, ideas, input, logChoice } from "./forms";
@@ -27,7 +26,7 @@ import type { ScreenItem } from "./screen";
 import { createThread, habitDone, logItem, nextHue, saveThread, touch, withFields, withLog, withValue } from "./threads";
 import { guessKind } from "./extract";
 import { capFirst } from "./text";
-import { dateToDay, dayDiff, localDay, parseDueAt } from "./time";
+import { dateToDay, dayDiff, dayToDate, localDay, parseDueAt } from "./time";
 
 /**
  * Everything Maru can do in the app, as tools for the model. Each one checks what it's given,
@@ -740,7 +739,7 @@ async function writeOnPage(turn: Turn, args: Args): Promise<string> {
   const question = str(args.question);
   const target = (question ? closest(writable, question, (f) => f.label) : null) ?? writable[0];
 
-  const today = await Entry.findOne({ userId: turn.ctx.userId, date: todayUtcMidnight() }).lean();
+  const today = await Entry.findOne({ userId: turn.ctx.userId, date: dayToDate(turn.ctx.day) }).lean();
   const saved = new Map((today?.fields ?? []).map((f) => [f.fieldId, f]));
   const fields: EntryField[] = template.fields.map((f) => ({
     fieldId: f.id,
@@ -762,7 +761,7 @@ async function writeOnPage(turn: Turn, args: Args): Promise<string> {
     throw err;
   }
   turn.actions.push({ type: "page-write", fieldId: target.id, text }, { type: "refresh" });
-  receipt(turn, "page", "Wrote on today’s page", `${quoted(text)} · ${target.label}`, "/entry/new");
+  receipt(turn, "page", "Wrote on today’s page", `${quoted(text)} · ${target.label}`, "/entry/new?day=today");
   return `Added to today's page under "${target.label}".`;
 }
 
@@ -1145,7 +1144,7 @@ export async function breakdownTurn(turn: Turn, period: string | null): Promise<
 
 const PAGES: Record<string, string> = {
   home: "/dashboard",
-  today: "/entry/new",
+  today: "/entry/new?day=today",
   pages: "/history",
   letters: "/digest/weekly",
   breakdowns: "/breakdowns",
@@ -1464,7 +1463,7 @@ async function offerChoices(turn: Turn, args: Args): Promise<string> {
     }
     if (!CHOOSABLE.includes(tool)) continue;
     // Opening the page they're already on does nothing, and starting what's already tracked isn't new.
-    if (tool === "open_page" && turn.where && PAGES[str(toolArgs.page) ?? ""] === turn.where) {
+    if (tool === "open_page" && turn.where && PAGES[str(toolArgs.page) ?? ""]?.split("?")[0] === turn.where) {
       here = true;
       continue;
     }

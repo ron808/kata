@@ -1,6 +1,6 @@
 import { ROLE_PRESETS } from "@/lib/roles";
-import type { DailyQuestion, RoleKey, ThreadStatus, ThreadT } from "@/lib/types";
-import { dateToDay, dayDiff, localDay, validTimeZone } from "@/lib/companion/time";
+import { ROLE_KEYS, type DailyQuestion, type RoleKey, type ThreadStatus, type ThreadT } from "@/lib/types";
+import { addDays, dateToDay, dayDiff, dayToDate, localDay, validTimeZone } from "@/lib/companion/time";
 import { pick, ref, seedOf, slugify } from "@/lib/companion/text";
 import { QUESTION_BANK, type BankQuestion, type QuestionTag } from "./bank";
 
@@ -118,22 +118,43 @@ function rankThreads(threads: ThreadT[], day: string, timeZone: string): ThreadT
   return ranked.map((r) => r.t);
 }
 
-function fits(q: BankQuestion, when: "morning" | "evening" | null): boolean {
-  return q.when === "any" || when === null || q.when === when;
+function fits(q: BankQuestion, when: "morning" | "evening" | null, past: boolean, dayOff: boolean): boolean {
+  // "What would help you wind down tonight?" belongs to the evening itself, not the morning after.
+  if (past && /\btonight\b/i.test(q.text)) return false;
+  if (dayOff && q.workday) return false;
+  return q.when === "any" || q.when === when;
+}
+
+// Questions about someone else's life: a teacher's class, a parent's kids, a partner. A tag like
+// "work" or "planning" shouldn't bring them to anyone else.
+const PERSONAL = new Set<string>([...ROLE_KEYS, "kids", "pets", "love", "caring", "job-hunt", "interviews", "study", "design", "music", "travel", "shipping"]);
+// Their days off move, so Saturday means nothing.
+const NO_WEEKEND = new Set<RoleKey>(["shift_worker", "healthcare"]);
+
+/** Whether a question about an event still makes sense: no "what's left to prepare" once it's passed. */
+function fitsDate(q: BankQuestion, t: ThreadT, day: string): boolean {
+  const due = t.dueAt ? dayDiff(dateToDay(new Date(t.dueAt)), day) : null;
+  if (q.id === "t-event-remember") return due !== null && due <= 0;
+  if (q.id === "t-event-well" || q.id === "t-event-prep") return due === null || due >= 0;
+  return true;
 }
 
 export interface QuestionUser {
   _id: unknown;
   role: string;
   interests: string[];
-  checkIn: "morning" | "evening" | "both";
   timezone: string;
 }
 
-export function questionsForToday(user: QuestionUser, threads: ThreadT[], day: string): DailyQuestion[] {
+/** `past` when the page they're about is yesterday's, which looks back the way an evening does. */
+export function questionsForToday(user: QuestionUser, threads: ThreadT[], day: string, { hour, past = false }: { hour: number; past?: boolean }): DailyQuestion[] {
   const timeZone = validTimeZone(user.timezone);
   const userId = String(user._id);
-  const when = user.checkIn === "both" ? null : user.checkIn;
+  // The time it actually is, not when they like to be checked in on. The afternoon gets neither.
+  const when = past || hour >= 17 || hour < 4 ? "evening" : hour < 12 ? "morning" : null;
+  const role = roleKeyOf(user.role);
+  const pageDay = dayToDate(past ? addDays(day, -1) : day).getUTCDay();
+  const dayOff = (pageDay === 0 || pageDay === 6) && !NO_WEEKEND.has(role);
   const used = new Set<string>();
   const out: DailyQuestion[] = [];
 
@@ -144,7 +165,8 @@ export function questionsForToday(user: QuestionUser, threads: ThreadT[], day: s
         q.text.includes("{thread}") &&
         q.kinds?.includes(t.kind) &&
         (!q.status || q.status.includes(status)) &&
-        fits(q, when) &&
+        fits(q, when, past, dayOff) &&
+        fitsDate(q, t, day) &&
         !used.has(q.id)
     );
     // A stuck or waiting thread gets a question about that; anything else gets one about moving it on.
@@ -161,11 +183,11 @@ export function questionsForToday(user: QuestionUser, threads: ThreadT[], day: s
     });
   }
 
-  const role = roleKeyOf(user.role);
   const interests = interestTags(user.interests);
+  const theirs = (q: BankQuestion) => !PERSONAL.has(q.tags[0]) || q.tags[0] === role || interests.includes(q.tags[0]);
   const general = (tags: string[]) =>
     QUESTION_BANK.filter(
-      (q) => !q.text.includes("{thread}") && fits(q, when) && !used.has(q.id) && q.tags.some((tag) => tags.includes(tag))
+      (q) => !q.text.includes("{thread}") && fits(q, when, past, dayOff) && theirs(q) && !used.has(q.id) && q.tags.some((tag) => tags.includes(tag))
     );
   let pool = general(interests);
   let tags: string[] = interests;

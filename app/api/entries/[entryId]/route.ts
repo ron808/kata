@@ -4,7 +4,7 @@ import { Entry } from "@/lib/db/models/Entry";
 import { User } from "@/lib/db/models/User";
 import { EntryUpsertSchema } from "@/lib/validation/schemas";
 import { handleError, jsonError, requireUser } from "@/lib/api";
-import { todayUtcMidnight } from "@/lib/utils/dates";
+import { todayIn, validTimeZone } from "@/lib/companion/time";
 import { countWords } from "@/lib/utils/streaks";
 
 const MAX_WORDS = 5000;
@@ -57,7 +57,8 @@ export async function PATCH(
     });
     if (!entry) return jsonError("Not found", 404);
 
-    const today = todayUtcMidnight();
+    const owner = await User.findById(session.user.id).select("timezone").lean();
+    const today = todayIn(validTimeZone(owner?.timezone));
     if (entry.date.getTime() !== today.getTime()) {
       return jsonError("Past entries are immutable.", 403);
     }

@@ -3,7 +3,6 @@ import { Icon } from "@/components/shared/Icon";
 import { EnergyBars, MoodDots, energyLabel, moodLabel } from "@/components/entry/fields/meters";
 import { hueForTag } from "@/components/entry/hue";
 import { firstLines } from "@/lib/utils/excerpt";
-import { isoDay, todayUtcMidnight } from "@/lib/utils/dates";
 import type { Entry } from "@/lib/types";
 
 const fmt = (iso: string, o: Intl.DateTimeFormatOptions) =>
@@ -27,18 +26,20 @@ function energyOf(e: Entry): number | null {
  */
 export function PageList({
   entries,
+  today,
   showMonth = true,
   moods,
   tagHues,
 }: {
   entries: Entry[];
+  /** The writer's today, yyyy-mm-dd. */
+  today: string;
   showMonth?: boolean;
   /** Mood from Kata's daily check-in, by yyyy-mm-dd, for templates without a mood field. */
   moods?: Record<string, number | null>;
   /** Hues of tags that belong to a thread, so a tag keeps its thread's colour. */
   tagHues?: Record<string, number>;
 }) {
-  const today = isoDay(todayUtcMidnight());
   return (
     <ul className="divide-y-2 divide-ink/[0.14]">
       {entries.map((e) => {

@@ -66,7 +66,7 @@ export async function POST(request: Request) {
       limiters.entryCreate,
       `entry:${session.user.id}:${ip}`
     );
-    if (!limit.ok) return jsonError("Daily entry limit reached.", 429);
+    if (!limit.ok) return jsonError("That’s a lot of saving. Try again in a minute.", 429);
 
     const body = await request.json();
     const data = PageUpsertSchema.parse(body);

@@ -56,7 +56,7 @@ export async function onboard(userId: string, input: OnboardingInput): Promise<O
     ? await Template.findOne({ _id: user.activeTemplateId, userId }).select("_id").lean<{ _id: Types.ObjectId }>()
     : null;
   let templateId: Types.ObjectId;
-  if (claimed || !current) {
+  if (!current) {
     const created = await Template.create({
       userId,
       name: `${preset.name} starter`,
@@ -67,7 +67,8 @@ export async function onboard(userId: string, input: OnboardingInput): Promise<O
     templateId = created._id;
   } else {
     templateId = current._id;
-    if (input.fields || roleKeyOf(user.role) !== input.role) {
+    // A page they already had stays theirs: setting up the companion is no reason to swap it.
+    if (!claimed && (input.fields || roleKeyOf(user.role) !== input.role)) {
       await Template.updateOne(
         { _id: current._id, userId },
         { $set: { name: `${preset.name} starter`, description: preset.description, fields } }

@@ -55,10 +55,10 @@ export function formatDate(d: Date, style: DateStyle, timeZone?: string): string
   return d.toLocaleDateString("en-US", { ...DATE_STYLES[style], timeZone });
 }
 
-/** A digest period: "Oct 19 – 25", "Sep 28 – Oct 4", or the month for monthly letters. */
+/** A digest period: "Oct 19 – 25", "Sep 28 – Oct 4", or the month for monthly letters. Its end day isn't in it. */
 export function formatRange(a: Date | string, b: Date | string, monthly = false): string {
   const s = new Date(a);
-  const e = new Date(b);
+  const e = new Date(new Date(b).getTime() - 86_400_000);
   if (monthly) return s.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
   const m = (d: Date) => d.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" });
   return s.getUTCMonth() === e.getUTCMonth()

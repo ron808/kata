@@ -149,7 +149,7 @@ const YOUR_NOUNS = new Set(
   health diet sleep routine novel book blog newsletter podcast garden car career studies degree course classes
   trip vacation holiday renovation startup business shop channel album talk presentation speech birthday knee
   back shoulder neck stomach skin energy anxiety migraines headaches hip ankle wrist injury physio appointment
-  commute inbox goals`.split(/\s+/)
+  commute inbox goals shift rota appointments`.split(/\s+/)
 );
 
 /** Single words that read as a thing at work: the launch, the migration, the gym. */
@@ -157,7 +157,7 @@ const THE_NOUNS = new Set(
   `gym launch release migration refactor rewrite redesign roadmap deck pitch demo report proposal grant
   fundraise onboarding deadline review audit build deploy deployment website site app api docs documentation
   backlog sprint invoice contract offer beta prototype mvp rollout cleanup outage incident bug feature
-  conference meeting party`.split(/\s+/)
+  conference meeting party paperwork`.split(/\s+/)
 );
 
 /** Activities named bare and lowercase: meditation, running, guitar. */

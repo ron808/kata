@@ -34,6 +34,7 @@ export const ProfilePatchSchema = z.object({
   bio: z.string().trim().max(160).optional(),
   isPublic: z.boolean().optional(),
   interests: tagList(12).optional(),
+  role: z.string().trim().max(60).optional(),
 });
 
 export const HandleQuerySchema = z.object({ h: z.string().max(64).default("") });

@@ -124,7 +124,7 @@ export function DigestView({
             <div className="mt-8 flex flex-wrap gap-3">
               {next && !next.ready ? (
                 <Link href="/entry/new" className={buttonClass()}>
-                  Write today’s page
+                  Write a page
                 </Link>
               ) : null}
               <Link href={monthly ? "/digest/weekly" : "/digest/monthly"} className={buttonClass({ variant: "secondary" })}>

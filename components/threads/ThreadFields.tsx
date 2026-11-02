@@ -154,7 +154,7 @@ function Strip({ field: f, today }: { field: ThreadField; today: string }) {
   const label = `${f.label}, last two weeks: ${days
     .map((d) => byDay.get(d))
     .filter((v) => v !== undefined)
-    .length} days logged${avg !== null ? `, this week about ${valueText(f, Math.round(avg * 10) / 10)} a day` : ""}`;
+    .length} days logged${avg !== null ? `, about ${valueText(f, Math.round(avg * 10) / 10)} on days logged this past week` : ""}`;
   return (
     <div className="mt-2.5">
       <div role="img" aria-label={label} className="flex h-10 items-end gap-[3px]">
@@ -176,7 +176,7 @@ function Strip({ field: f, today }: { field: ThreadField; today: string }) {
         })}
       </div>
       <p className="mt-1 text-[0.8125rem] text-ink/65">
-        {avg !== null ? `About ${valueText(f, Math.round(avg * 10) / 10)} a day this week` : "Nothing logged this week"}
+        {avg !== null ? `About ${valueText(f, Math.round(avg * 10) / 10)} on days you logged, last 7 days` : "Nothing logged in the last 7 days"}
       </p>
     </div>
   );

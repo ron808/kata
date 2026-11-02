@@ -6,16 +6,9 @@ import { useCompanion } from "@/components/shared/Companion";
 import { Icon } from "@/components/shared/Icon";
 import { KIND_LABEL, Status } from "@/components/shared/Status";
 import { useToast } from "@/components/shared/Toast";
-import type { ThreadStatus, ThreadT } from "@/lib/types";
-import { metaWithToday, onYourMind } from "./meta";
+import type { ThreadT } from "@/lib/types";
+import { metaWithToday, onYourMind, showsStatus, stepOn, stepsFor } from "./meta";
 import { ThreadMap } from "./ThreadMap";
-
-const STEPS: { value: ThreadStatus; label: string }[] = [
-  { value: "moving", label: "Moving" },
-  { value: "stuck", label: "Stuck" },
-  { value: "waiting", label: "Waiting" },
-  { value: "done", label: "Done" },
-];
 
 /** Change a thread and hand back the saved version. */
 export async function patchThread(id: string, body: Record<string, unknown>): Promise<ThreadT> {
@@ -52,7 +45,7 @@ export function ThreadNote({
     onChange({ ...t, ...optimistic });
     try {
       onChange(await patchThread(t._id, body));
-      if (optimistic.status === "done") toast(`${t.title}: done. ${name} took it off your mind.`, "success");
+      if (body.status === "done") toast(t.kind === "habit" ? `${t.title}: done for today.` : `${t.title}: done. ${name} took it off your mind.`, "success");
     } catch (err) {
       onChange(before);
       toast(err instanceof Error ? err.message : "That didn’t save", "danger");
@@ -65,7 +58,7 @@ export function ThreadNote({
     <div className="well appear p-4" data-hue={t.hue % 8}>
       <div className="flex items-start justify-between gap-3">
         <p className="font-display text-[1.6rem] leading-[0.95]">{t.title}</p>
-        <Status status={t.status} className="mt-1" />
+        {showsStatus(t) ? <Status status={t.status} className="mt-1" /> : null}
       </div>
       <p className="mt-1.5 text-[0.8125rem] text-ink/65">
         {KIND_LABEL[t.kind]} · {metaWithToday(t, today, tz)}
@@ -78,18 +71,23 @@ export function ThreadNote({
         </p>
       ) : null}
       <div className="scale mt-4" role="group" aria-label={`Where ${t.title} is`}>
-        {STEPS.map((s) => (
-          <button
-            key={s.value}
-            type="button"
-            className="scale-step scale-row"
-            aria-pressed={t.status === s.value}
-            disabled={saving}
-            onClick={() => t.status !== s.value && save({ status: s.value }, { status: s.value })}
-          >
-            {s.label}
-          </button>
-        ))}
+        {stepsFor(t.kind)
+          .filter((s) => s.value !== "paused" || t.kind === "habit" || t.kind === "person")
+          .map((s) => {
+            const on = stepOn(t, s.value, today, tz);
+            return (
+              <button
+                key={s.value}
+                type="button"
+                className="scale-step scale-row"
+                aria-pressed={on}
+                disabled={saving}
+                onClick={() => !on && save({ status: s.value }, t.kind === "habit" && s.value === "done" ? {} : { status: s.value })}
+              >
+                {s.label}
+              </button>
+            );
+          })}
       </div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <button

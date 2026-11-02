@@ -10,16 +10,16 @@ import { companionHueOf, companionNameOf, nicknameOf } from "@/lib/companion/nam
 import { AppShell, type ShellUser } from "@/components/shared/AppShell";
 
 async function loadShell(id: string, fallback: { name: string; email: string }): Promise<{ user: ShellUser; unread: number; messages: number }> {
-  const base = { ...fallback, handle: null, hue: hueOf({ _id: new Types.ObjectId(id) }), names: { name: companionNameOf(null), nickname: nicknameOf(fallback), hue: null } };
+  const base = { ...fallback, handle: null, timezone: null, hue: hueOf({ _id: new Types.ObjectId(id) }), names: { name: companionNameOf(null), nickname: nicknameOf(fallback), hue: null } };
   try {
     await connectDB();
     const [doc, unread, messages] = await Promise.all([
-      User.findById(id).select("name handle hue companionName nickname companionHue").lean(),
+      User.findById(id).select("name handle hue timezone companionName nickname companionHue").lean(),
       unreadCount(id),
       unreadMessages(id),
     ]);
     if (!doc) return { user: base, unread: 0, messages: 0 };
-    const user = { ...base, name: doc.name || base.name, handle: doc.handle ?? null, hue: hueOf(doc) };
+    const user = { ...base, name: doc.name || base.name, handle: doc.handle ?? null, timezone: doc.timezone ?? null, hue: hueOf(doc) };
     return { user: { ...user, names: { name: companionNameOf(doc), nickname: nicknameOf({ ...doc, name: user.name }), hue: companionHueOf(doc) } }, unread, messages };
   } catch {
     // No database: the shell still renders; pages explain what's missing.

@@ -43,7 +43,10 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ threadId:
     if (data.shared !== undefined) set.shared = data.shared;
     if (data.archived !== undefined) set.archived = data.archived;
 
-    const statusChanged = data.status !== undefined && data.status !== t.status;
+    // On a habit Done means today, as it does in a check-in or in chat. Paused is how one stops.
+    const habitDay = t.kind === "habit" && data.status === "done";
+    if (habitDay) Object.assign(set, habitDone(t, c) ?? {});
+    const statusChanged = !habitDay && data.status !== undefined && data.status !== t.status;
     if (statusChanged) {
       set.status = data.status;
       if (data.status === "done" && data.nextStep === undefined) set.nextStep = "";

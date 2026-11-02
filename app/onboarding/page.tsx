@@ -8,6 +8,7 @@ import { OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
 import { INTEREST_TAGS } from "@/components/settings/interestTags";
 import { buttonClass } from "@/components/shared/Button";
 import { DbNotConfigured } from "@/components/shared/DbNotConfigured";
+import { User } from "@/lib/db/models/User";
 import { Logo } from "@/components/shared/Logo";
 
 export const metadata: Metadata = { title: "Set up · Kata" };
@@ -42,6 +43,7 @@ export default async function OnboardingPage() {
           currentHandle={me.handle}
           suggestedHandle={me.suggestedHandle ?? null}
           interestTags={INTEREST_TAGS}
+          hasPage={Boolean(await User.exists({ _id: session.user.id, activeTemplateId: { $ne: null } }))}
           today={formatDate(new Date(), "long", "UTC")}
         />
       </main>

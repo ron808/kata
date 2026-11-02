@@ -23,7 +23,7 @@ export default async function MessagesPage() {
       <PageHeader
         kicker="Messages"
         title="Messages"
-        lede="Write to people you follow, or anyone who shares in the open. Only the two of you see a conversation."
+        lede="Write to anyone with a public profile, or anyone who follows you. Only the two of you see a conversation."
       />
       {list ? (
         <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-12">
