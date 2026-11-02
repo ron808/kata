@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { Conversation } from "@/components/home/Conversation";
 import type { KataMessage } from "@/lib/types";
 import { MaruMark } from "./Avatar";
-import { ASK_EVENT, useCompanion, type Focus } from "./Companion";
+import { ASK_EVENT, HELLO_EVENT, helloDue, useCompanion, type Focus } from "./Companion";
+import { Icon } from "./Icon";
 import { watchPosts } from "./screen";
 import { useToast } from "./Toast";
 
@@ -24,14 +25,17 @@ const RAISED = ["/entry/new", "/settings/template"];
  * post opens it about that post. Home has the conversation on the page itself, so there the
  * shortcut and the posts' buttons go to it instead.
  */
-export function AskMaru({ pathname }: { pathname: string }) {
+export function AskMaru({ pathname, focused = false }: { pathname: string; focused?: boolean }) {
   const { toast } = useToast();
   const { name } = useCompanion();
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [focus, setFocus] = useState<Focus | null>(null);
+  const [hello, setHello] = useState<KataMessage | null>(null);
   const opener = useRef<HTMLButtonElement | null>(null);
   const onHome = pathname === "/dashboard";
+  // Writing, or in the middle of a conversation with someone: Maru can wait.
+  const busy = pathname.startsWith("/entry/new") || pathname === "/settings/template" || pathname.startsWith("/messages/");
 
   function close() {
     setOpen(false);
@@ -41,6 +45,27 @@ export function AskMaru({ pathname }: { pathname: string }) {
 
   // Which post they're on, for "this one".
   useEffect(() => watchPosts(), []);
+
+  // Coming back: Maru says hi and asks something. Home shows it in the conversation; anywhere
+  // else it's a bubble by the button, and the conversation has it when opened.
+  useEffect(() => {
+    if (focused || busy) return;
+    let live = true;
+    const greet = async () => {
+      if (document.visibilityState !== "visible" || !helloDue()) return;
+      const res = await fetch("/api/companion/hello", { method: "POST" }).catch(() => null);
+      const data = (await res?.json().catch(() => null)) as { message?: KataMessage | null } | null;
+      if (!live || !data?.message) return;
+      if (document.getElementById("tell-maru")) window.dispatchEvent(new CustomEvent<KataMessage>(HELLO_EVENT, { detail: data.message }));
+      else setHello(data.message);
+    };
+    void greet();
+    document.addEventListener("visibilitychange", greet);
+    return () => {
+      live = false;
+      document.removeEventListener("visibilitychange", greet);
+    };
+  }, [focused, busy]);
 
   // A post's "Ask Maru": open about it. An open panel's conversation takes it up itself.
   useEffect(() => {
@@ -90,7 +115,7 @@ export function AskMaru({ pathname }: { pathname: string }) {
   }, [open, toast, name]);
 
   if (onHome) return null;
-  const raised = RAISED.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  const raised = !focused && RAISED.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   // On a phone, a conversation's send button sits where Maru's would: ⌘K and the desktop button stay.
   const chatting = pathname.startsWith("/messages/");
 
@@ -132,6 +157,24 @@ export function AskMaru({ pathname }: { pathname: string }) {
         </div>
       ) : null}
 
+      {hello && !open && !busy ? (
+        <div className={`appear fixed right-4 z-40 flex max-w-[min(20rem,calc(100vw-2rem))] items-start gap-1 lg:right-6 ${focused ? "bottom-24" : "bottom-[calc(10.5rem+env(safe-area-inset-bottom))] lg:bottom-24"}`}>
+          <button
+            type="button"
+            onClick={() => {
+              setHello(null);
+              setOpen(true);
+            }}
+            className="bubble-kata min-w-0 px-4 py-3 text-left leading-snug"
+          >
+            {hello.text}
+          </button>
+          <button type="button" onClick={() => setHello(null)} aria-label="Dismiss" className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-ink/70 transition-colors hover:bg-ink/[0.06] hover:text-ink">
+            <Icon name="close" className="h-4 w-4" />
+          </button>
+        </div>
+      ) : null}
+
       <button
         ref={opener}
         type="button"
@@ -140,7 +183,7 @@ export function AskMaru({ pathname }: { pathname: string }) {
         aria-keyshortcuts="Meta+K Control+K"
         title={`Ask ${name} (⌘K)`}
         className={`press fixed right-4 z-40 flex items-center gap-2.5 rounded-full border-2 border-edge bg-surface p-1.5 transition-[transform,box-shadow,opacity] duration-300 lg:right-6 lg:pr-4 ${
-          raised ? "bottom-[calc(6.5rem+env(safe-area-inset-bottom))]" : "bottom-[calc(5.75rem+env(safe-area-inset-bottom))] lg:bottom-6"
+          focused ? "bottom-5 lg:bottom-6" : raised ? "bottom-[calc(6.5rem+env(safe-area-inset-bottom))]" : "bottom-[calc(5.75rem+env(safe-area-inset-bottom))] lg:bottom-6"
         } ${open ? "pointer-events-none opacity-0" : ""} ${chatting ? "max-lg:hidden" : ""}`}
       >
         <MaruMark size={44} />

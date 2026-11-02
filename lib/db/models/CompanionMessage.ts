@@ -17,7 +17,7 @@ export interface IQuickReply {
   value: string;
 }
 
-export const RECEIPT_KINDS = ["thread", "memory", "page", "question", "settings", "names", "people", "share", "message", "breakdown", "open"] as const;
+export const RECEIPT_KINDS = ["thread", "memory", "page", "question", "settings", "names", "people", "share", "message", "breakdown", "mission", "open"] as const;
 export type ReceiptKind = (typeof RECEIPT_KINDS)[number];
 
 /** Something Maru did, shown as a receipt under its message. */
@@ -92,6 +92,8 @@ export interface ICompanionMessage {
   choices: IChoice[];
   /** The writer's local calendar day, yyyy-mm-dd. */
   day: string;
+  /** A hello: the next one replaces it if nobody answered, so hellos don't pile up. */
+  hello?: boolean;
   createdAt: Date;
 }
 
@@ -161,6 +163,7 @@ const CompanionMessageSchema = new Schema<ICompanionMessage>(
     done: { type: [ReceiptSchema], default: [] },
     choices: { type: [ChoiceSchema], default: [] },
     day: { type: String, required: true },
+    hello: Boolean,
     createdAt: { type: Date, default: Date.now },
   },
   { timestamps: false }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { connectDB } from "@/lib/db/mongoose";
-import { CHECK_INS, User, type IUser } from "@/lib/db/models/User";
+import { CHECK_INS, FOCUS_THEMES, User, type IUser } from "@/lib/db/models/User";
 import { handleError, jsonError, requireUser } from "@/lib/api";
 import { COMPANION_NAME_MAX, NICKNAME_MAX, companionHueOf, companionNameOf, nicknameOf, tidyName } from "@/lib/companion/name";
 import { nameReceipts, noteNames } from "@/lib/companion/naming";
@@ -19,6 +19,8 @@ const KataSettingsSchema = z.object({
   companionHue: z.number().int().min(1).max(7).nullable().optional(),
   /** Where they are now, from their device. */
   timezone: z.string().max(60).optional(),
+  /** The colours focus wears. */
+  focusTheme: z.enum(FOCUS_THEMES).optional(),
 });
 
 type Settings = Pick<IUser, "checkIn" | "companionName" | "nickname" | "name" | "companionHue">;
@@ -53,8 +55,9 @@ export async function PATCH(request: Request) {
     const data = KataSettingsSchema.parse(await request.json().catch(() => undefined));
     await connectDB();
 
-    const set: Partial<Pick<IUser, "checkIn" | "companionName" | "nickname" | "companionHue" | "timezone">> = {};
+    const set: Partial<Pick<IUser, "checkIn" | "companionName" | "nickname" | "companionHue" | "timezone" | "focusTheme">> = {};
     if (data.checkIn) set.checkIn = data.checkIn;
+    if (data.focusTheme) set.focusTheme = data.focusTheme;
     if (data.timezone && validTimeZone(data.timezone) === data.timezone) set.timezone = data.timezone;
     if (data.companionName !== undefined) set.companionName = tidyName(data.companionName, COMPANION_NAME_MAX);
     if (data.nickname !== undefined) set.nickname = tidyName(data.nickname, NICKNAME_MAX);

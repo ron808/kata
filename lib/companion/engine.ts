@@ -278,6 +278,8 @@ export async function ensureToday(userId: string): Promise<Today> {
   let messages = await messagesForDay(userId, ctx.day);
   const greeting = messages.find((m) => m.from === "kata" && m.kind === "greeting");
   let created: ICompanionMessage[] = [];
+  // In focus Maru asks about nothing but the mission: the day's opening waits until focus ends.
+  if (ctx.user.focusMissionId) return { ctx, messages, created };
   if (!greeting) created = await openDay(ctx);
   else if (eveningDue(ctx, messages, greeting)) created = await openEvening(ctx, messages);
   if (!greeting || created.length) messages = await messagesForDay(userId, ctx.day);

@@ -69,6 +69,41 @@ export function pageDayFor(today: string, hour: number, yesterdayDone: boolean):
   return hour >= DAY_TURNS_AT && hour < 12 && !yesterdayDone ? addDays(today, -1) : today;
 }
 
+const clocks = new Map<string, Intl.DateTimeFormat>();
+
+/** What a wall clock in the zone reads at `at`: year, month, day, hour, minute. */
+function wallClock(timeZone: string, at: Date): number[] {
+  let f = clocks.get(timeZone);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric" });
+    clocks.set(timeZone, f);
+  }
+  const parts = Object.fromEntries(f.formatToParts(at).map((p) => [p.type, Number(p.value)]));
+  return [parts.year, parts.month, parts.day, parts.hour, parts.minute];
+}
+
+/**
+ * The moment a clock in the writer's zone shows hour:minute on their day. Their day runs until
+ * 4am, so 1:30 on a Monday is the night after it, not the one before.
+ */
+export function momentOn(day: string, hour: number, minute: number, timeZone: string): Date {
+  const [y, m, d] = (hour < DAY_TURNS_AT ? addDays(day, 1) : day).split("-").map(Number);
+  const wanted = Date.UTC(y, m - 1, d, hour, minute);
+  let at = wanted;
+  // Twice, in case a clock change falls between the guess and the answer.
+  for (let i = 0; i < 2; i++) {
+    const [yy, mm, dd, hh, min] = wallClock(timeZone, new Date(at));
+    at += wanted - Date.UTC(yy, mm - 1, dd, hh, min);
+  }
+  return new Date(at);
+}
+
+/** The hour and minute a clock in the zone shows at `at`. */
+export function clockIn(timeZone: string, at: Date): [hour: number, minute: number] {
+  const [, , , hour, minute] = wallClock(timeZone, at);
+  return [hour, minute];
+}
+
 /** The calendar day a UTC-midnight date stands for. */
 export function dateToDay(d: Date): string {
   return d.toISOString().slice(0, 10);

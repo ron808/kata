@@ -6,6 +6,7 @@ import { Digest } from "./models/Digest";
 import { DirectMessage } from "./models/DirectMessage";
 import { Entry } from "./models/Entry";
 import { Follow } from "./models/Follow";
+import { Mission } from "./models/Mission";
 import { Moment } from "./models/Moment";
 import { Notification } from "./models/Notification";
 import { PasswordResetToken } from "./models/PasswordResetToken";
@@ -31,6 +32,7 @@ const MODELS = [
   DirectMessage,
   Entry,
   Follow,
+  Mission,
   Moment,
   Notification,
   PasswordResetToken,

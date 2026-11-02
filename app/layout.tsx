@@ -41,9 +41,10 @@ export const viewport: Viewport = {
 };
 
 // Runs before first paint: marks JS as available (CSS stages the scroll scenes on it),
-// applies a saved theme so there is no flash of the wrong one, and marks a returning
-// signed-in visitor so the cached landing shows "Open Kata" at once (components/landing/Session.tsx).
-const bootScript = `(function(){var d=document.documentElement;d.classList.add("js");try{var t=localStorage.getItem("kata-theme");if(t==="light"||t==="dark")d.dataset.theme=t;if(localStorage.getItem("kata-session")==="in")d.dataset.session="in"}catch(e){}})()`;
+// applies a saved theme so there is no flash of the wrong one, wears focus's colours on the focus
+// screen for the same reason, and marks a returning signed-in visitor so the cached landing shows
+// "Open Kata" at once (components/landing/Session.tsx).
+const bootScript = `(function(){var d=document.documentElement;d.classList.add("js");try{var t=localStorage.getItem("kata-theme");if(t==="light"||t==="dark")d.dataset.theme=t;var f=localStorage.getItem("kata-focus");if(f&&location.pathname==="/focus")d.dataset.focus=f;if(localStorage.getItem("kata-session")==="in")d.dataset.session="in"}catch(e){}})()`;
 
 export default function RootLayout({
   children,

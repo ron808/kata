@@ -15,7 +15,7 @@ import type { Choice, ChoiceInput, KataMessage, Receipt, ReceiptKind } from "@/l
  */
 
 // A thread or a person brings its own hue; everything else has one by kind.
-const HUE: Record<ReceiptKind, number> = { thread: 3, memory: 4, page: 1, question: 2, settings: 6, names: 5, people: 5, share: 0, message: 2, breakdown: 1, open: 7 };
+const HUE: Record<ReceiptKind, number> = { thread: 3, memory: 4, page: 1, question: 2, settings: 6, names: 5, people: 5, share: 0, message: 2, mission: 2, breakdown: 1, open: 7 };
 const ICON: Record<ReceiptKind, IconName> = {
   thread: "threads",
   memory: "star",
@@ -27,6 +27,7 @@ const ICON: Record<ReceiptKind, IconName> = {
   share: "share",
   message: "chat",
   breakdown: "chart",
+  mission: "target",
   open: "arrow",
 };
 
@@ -387,7 +388,7 @@ function Field({ id, input: i, value, onChange, onTrack }: { id: string; input: 
         id={id}
         className="control !min-h-11 !py-2"
         autoComplete="off"
-        maxLength={i.key === "title" ? 60 : 200}
+        maxLength={i.key === "title" ? 60 : i.key === "tasks" ? 300 : 200}
         placeholder={i.placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}

@@ -193,7 +193,7 @@ export interface QuickReply {
   value: string;
 }
 
-export type ReceiptKind = "thread" | "memory" | "page" | "question" | "settings" | "names" | "people" | "share" | "message" | "breakdown" | "open";
+export type ReceiptKind = "thread" | "memory" | "page" | "question" | "settings" | "names" | "people" | "share" | "message" | "breakdown" | "mission" | "open";
 
 /** Something Maru did. */
 export interface Receipt {
@@ -235,6 +235,8 @@ export interface KataMessage {
   _id: string;
   from: "kata" | "you";
   kind: "greeting" | "mood" | "checkin" | "question" | "reply" | "note" | "nudge";
+  /** Said as they came back: replaced by the next one if nobody answers. */
+  hello?: boolean;
   text: string;
   threadId: string | null;
   replies: QuickReply[];
@@ -407,4 +409,70 @@ export interface BreakdownT {
   /** Asked ones go on this day unless kept; null when kept. */
   expiresAt: string | null;
   madeAt: string;
+}
+
+// ── Missions ──────────────────────────────────────────────────────────────────
+
+export type TaskStatus = "todo" | "stuck" | "done" | "skipped";
+export type MissionStatus = "open" | "done" | "dropped";
+export type FocusTheme = "sea" | "moss" | "ember";
+
+/** One thing on a mission: a thread that lasts as long as the list does. */
+export interface TaskT {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  hue: number;
+  /** When it's planned for; `atText` is that on the writer's clock ("6:30 pm"). */
+  at: string | null;
+  atText: string;
+  /** Its own timer. Without one it counts up. */
+  minutes: number | null;
+  /** Time on it, not counting the stretch running now. */
+  spentMs: number;
+  /** Running since. */
+  startedAt: string | null;
+  doneAt: string | null;
+  note: string;
+}
+
+export interface MissionLogT {
+  at: string;
+  text: string;
+}
+
+/** A temporary list, for a day or as long as it takes, with what happened on it. */
+export interface MissionT {
+  _id: string;
+  /** What to call it: its own name, or its day's ("Today’s list"). */
+  name: string;
+  /** The name they gave it, if any. */
+  title: string;
+  day: string;
+  status: MissionStatus;
+  tasks: TaskT[];
+  endsAt: string | null;
+  endsText: string;
+  focusMs: number;
+  /** In focus since; null when it isn't. */
+  focusedAt: string | null;
+  askedAt: string | null;
+  log: MissionLogT[];
+  startedAt: string;
+  endedAt: string | null;
+  take: string;
+  /** The server's clock when this was read, so timers agree with it. */
+  now: string;
+}
+
+/** The focus the shell shows, on every page, while it lasts. */
+export interface FocusState {
+  missionId: string;
+  name: string;
+  theme: FocusTheme;
+  endsAt: string | null;
+  focusMs: number;
+  focusedAt: string;
+  /** The server's clock when this was read. */
+  now: string;
 }

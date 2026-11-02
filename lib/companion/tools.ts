@@ -6,12 +6,21 @@ import { PERIOD_IDEAS, parsePeriod, periodTitle } from "@/lib/breakdowns/period"
 import { scoreText, summaryLine } from "@/lib/breakdowns/summary";
 import type { IChoice, IChoiceInput, IReceipt, ReceiptKind } from "@/lib/db/models/CompanionMessage";
 import { Entry } from "@/lib/db/models/Entry";
+import type { IMission } from "@/lib/db/models/Mission";
 import { MOMENT_KINDS, Moment, VISIBILITIES } from "@/lib/db/models/Moment";
 import { Notification } from "@/lib/db/models/Notification";
 import { Template, type ITemplate, type ITemplateField } from "@/lib/db/models/Template";
 import { THREAD_KINDS, THREAD_STATUSES, Thread, threadKey, type IThread, type IThreadField, type ThreadKind, type ThreadStatus } from "@/lib/db/models/Thread";
 import { CHECK_INS, User } from "@/lib/db/models/User";
 import { PageError, savePage } from "@/lib/entries/save";
+import { changeMission, clockText, createMission, endMission, focusOff, focusOn, keepAsThreads, listMissions, openMissions, runAgain, toMissionT } from "@/lib/missions";
+import { Finished, NoSuchTask, type Change } from "@/lib/missions/apply";
+import { missionName, nextUp, tally } from "@/lib/missions/core";
+import { endsFrom, parseTasks } from "@/lib/missions/parse";
+import { whereWeAre } from "@/lib/missions/prompts";
+import { reportOf } from "@/lib/missions/report";
+import type { Asked } from "@/lib/missions/said";
+import { listItems } from "@/lib/missions/said";
 import { checkLimit, limiters } from "@/lib/ratelimit/upstash";
 import { follow, replyTo, shareMoment, unfollow } from "@/lib/social/actions";
 import { sendMessage } from "@/lib/social/messages";
@@ -25,7 +34,7 @@ import { nameReceipts } from "./naming";
 import type { ScreenItem } from "./screen";
 import { createThread, habitDone, logItem, nextHue, saveThread, touch, withFields, withLog, withValue } from "./threads";
 import { guessKind } from "./extract";
-import { capFirst } from "./text";
+import { capFirst, count } from "./text";
 import { addDays, dateToDay, dayDiff, dayToDate, localDay, parseDueAt } from "./time";
 
 /**
@@ -40,6 +49,8 @@ export type ClientAction =
   | { type: "navigate"; href: string }
   | { type: "theme"; value: "light" | "dark" | "system" }
   | { type: "refresh" }
+  /** Focus went on or off: the whole app changes colour and shows less. */
+  | { type: "focus"; on: boolean }
   /** Maru wrote on today's page: an open page adds the same text to that field. */
   | { type: "page-write"; fieldId: string; text: string }
   /** A reply went up: the post on screen shows it at once. */
@@ -163,6 +174,11 @@ const CHOOSABLE = [
   "unfollow",
   "open_page",
   "make_breakdown",
+  "start_mission",
+  "mission_task",
+  "set_focus",
+  "end_mission",
+  "run_mission_again",
 ];
 
 /** What a choice may run, as the model sees it: drafting replies only when there are posts on screen. */
@@ -260,7 +276,7 @@ const TOOLS: Record<string, ChatCompletionTool> = {
     {
       page: {
         type: "string",
-        enum: ["home", "today", "pages", "letters", "breakdowns", "threads", "memories", "people", "discover", "find_people", "notifications", "gallery", "builder", "settings", "profile"],
+        enum: ["home", "today", "pages", "letters", "breakdowns", "missions", "focus", "threads", "memories", "people", "discover", "find_people", "notifications", "gallery", "builder", "settings", "profile"],
       },
       handle: { type: "string", description: "For a profile: whose. Leave out for their own." },
     },
@@ -356,12 +372,54 @@ const TOOLS: Record<string, ChatCompletionTool> = {
   follow: fn("follow", "Follow someone by their @handle.", { handle: { type: "string" } }, ["handle"]),
   unfollow: fn("unfollow", "Stop following someone by their @handle.", { handle: { type: "string" } }, ["handle"]),
   clear_notifications: fn("clear_notifications", "Mark all their notifications read.", {}),
+  start_mission: fn(
+    "start_mission",
+    "A temporary list: a to-do list for today, or a push on something for as long as it takes. Its tasks live on the list, not on their threads.",
+    {
+      tasks: { type: "array", items: { type: "string" }, description: 'One per task, times in their words: "Gym at 6pm for 45 min".' },
+      title: { type: "string", description: "Only a name they gave it. A list for a day needs none." },
+      day: { type: "string", description: "YYYY-MM-DD, when it's for another day." },
+      until: { type: "string", description: 'When the whole thing ends: "2 hours", "18:00", a date.' },
+      focus: { type: "boolean", description: "They want to focus on it now." },
+    }
+  ),
+  mission_task: fn(
+    "mission_task",
+    "Change a task on their mission, or add some.",
+    {
+      task: { type: "string", description: "Its name." },
+      do: { type: "string", enum: ["start", "pause", "done", "skip", "stuck", "back", "remove"] },
+      note: { type: "string", description: "Where it stands, in their words." },
+      at: { type: "string", description: 'A new time, "18:00".' },
+      minutes: { type: "number", description: "A new timer." },
+      add: { type: "array", items: { type: "string" }, description: "New tasks, worded as for start_mission." },
+    }
+  ),
+  set_focus: fn(
+    "set_focus",
+    "Turn focus mode on or off. On gives the whole app over to one mission; off brings everything back and keeps the list.",
+    { on: { type: "boolean" }, mission: { type: "string", description: "Which, if they have several." }, until: { type: "string", description: 'How long: "25 min", "18:00".' } },
+    ["on"]
+  ),
+  end_mission: fn(
+    "end_mission",
+    "End a mission: finish wraps it up with a report, drop kills it. Either way it stays saved to run again.",
+    { how: { type: "string", enum: ["finish", "drop"] }, mission: { type: "string" } },
+    ["how"]
+  ),
+  run_mission_again: fn("run_mission_again", "Start a past mission again from its tasks.", { mission: { type: "string", description: "Its name. Left out: the last one." } }),
 };
 
 // Every tool's definition costs tokens on every call, and the free tier counts tokens per
 // minute, so a message gets the core tools plus the groups its words point to.
 const CORE = ["update_thread", "create_thread", "remember", "forget", "search_pages", "offer_choices", "open_page"];
+const MISSIONS = ["start_mission", "mission_task", "set_focus", "end_mission", "run_mission_again"];
+// In focus Maru works on the mission, so it carries little: the rest of its tools come only when their words ask.
+const FOCUS_CORE = [...MISSIONS, "update_thread", "create_thread", "offer_choices", "open_page"];
 const GROUPS: [RegExp, string[]][] = [
+  [/\b(?:to-?\s?dos?|check\s?lists?|missions?|focus|timers?|tasks?|lists? for|my list|the list|plan (?:for )?(?:my|the|today|tomorrow)|deep work|pomodoro|wrap(?:ping)? (?:it )?up|get through|to get done)\b/i, MISSIONS],
+  // Several things for today in one breath is a list, whatever it's called.
+  [/\b(?:today|tonight|this (?:morning|afternoon|evening))\b[^.?!]*(?:,|\band\b)[^.?!]*(?:,|\band\b)/i, MISSIONS],
   [
     /\b(?:pages?|journal|questions?|prompts?|template|layout|write|note|jot|put|log|add|rename|reword|switch)\b/i,
     ["write_on_page", "add_page_question", "remove_page_question", "rename_page_question", "use_page"],
@@ -396,10 +454,11 @@ export const readsOnly = (said: string) => PURE_QUESTION.test(said.trim());
  * question). Posts on the screen bring draft_replies, which only drafts; threads that keep
  * numbers bring log_thread.
  */
-export function toolsFor(said: string, { every = false, screen = false, logs = false, also = "" } = {}): ChatCompletionTool[] {
+export function toolsFor(said: string, { every = false, screen = false, logs = false, also = "", missions = false, focused = false } = {}): ChatCompletionTool[] {
   // Always in the same order, so the provider's cache of the tools keeps working.
-  const names = new Set(readsOnly(said) ? READ_ONLY : every ? Object.keys(TOOLS) : CORE);
+  const names = new Set(readsOnly(said) ? READ_ONLY : every ? Object.keys(TOOLS) : focused ? FOCUS_CORE : CORE);
   if (logs && !readsOnly(said)) names.add("log_thread");
+  if (missions && !readsOnly(said)) MISSIONS.forEach((t) => names.add(t));
   // The groups follow their words, and the ones just before them (`also`), so a reply keeps its tools.
   const words = `${said}\n${also}`;
   if (BREAKDOWN.test(words)) names.add("make_breakdown");
@@ -1143,6 +1202,382 @@ export async function breakdownTurn(turn: Turn, period: string | null): Promise<
   }
 }
 
+// ── Missions ──────────────────────────────────────────────────────────────────
+
+/** Tasks as the model or a form gives them: a list, or one line with commas in it. */
+function taskWords(raw: unknown): string[] {
+  if (Array.isArray(raw)) return list(raw);
+  const said = str(raw);
+  return said ? listItems(said) : [];
+}
+
+const whenOn = (ctx: EngineCtx, day = ctx.day) => ({ day, now: ctx.now, tz: ctx.tz });
+const missionHref = (m: Pick<IMission, "_id">) => `/missions/${String(m._id)}`;
+const plural = (n: number, one: string) => `${count(n)} ${one}${n === 1 ? "" : "s"}`;
+
+/** Which mission they mean: the one named, the one in focus, or the only one going. */
+async function theMission(turn: Turn, name?: string): Promise<IMission> {
+  const { ctx } = turn;
+  const open = await openMissions(ctx);
+  if (!open.length) throw new Unable("There’s no mission going right now.", "start_mission makes one.");
+  if (name) {
+    const found = closest(open, name, (m) => missionName(m, ctx.day));
+    if (found) return found;
+  }
+  const only = open.find((m) => m.focusedAt) ?? (open.length === 1 ? open[0] : null);
+  if (only) return only;
+  throw new Unable("Which mission?", `They have ${open.map((m) => `"${missionName(m, ctx.day)}"`).join(" and ")}: pass mission, or ask with offer_choices.`);
+}
+
+function focusChoice(m: Pick<IMission, "_id" | "title" | "day">, ctx: EngineCtx): IChoice {
+  return { label: "Turn on focus", detail: missionName(m, ctx.day), kind: "mission", tool: "set_focus", args: { on: true, mission: missionName(m, ctx.day) }, editable: false, public: false, inputs: [], action: "" };
+}
+
+function focused(turn: Turn, m: Pick<IMission, "_id">, on: boolean) {
+  turn.changed = true;
+  turn.actions.push({ type: "focus", on }, { type: "navigate", href: on ? "/focus" : missionHref(m) });
+}
+
+async function startMissionTool(turn: Turn, args: Args): Promise<string> {
+  const { ctx } = turn;
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(str(args.day) ?? "") ? str(args.day)! : ctx.day;
+  const when = whenOn(ctx, day);
+  const tasks = parseTasks(taskWords(args.tasks), when);
+  const title = capFirst((str(args.title) ?? "").replace(/\s+/g, " ")).slice(0, 80);
+  const until = str(args.until);
+  // A second "list for today" adds to the one they have: two of the same is never what they meant.
+  const open = await openMissions(ctx);
+  const same = open.find((m) => (title ? norm(m.title) === norm(title) : !m.title && m.day === day));
+  const mission = same
+    ? await changeMission(ctx, String(same._id), { do: "add", tasks })
+    : await createMission(ctx, { title, day, tasks, endsAt: until ? endsFrom(until, when) : null });
+  if (!mission) throw new Unable("That didn’t save. Try again.");
+  turn.changed = true;
+  const name = missionName(mission, ctx.day);
+  const timed = tasks.filter((t) => t.at || t.minutes).length;
+  const detail = [tasks.length ? plural(tasks.length, "task") : "", timed ? `${timed} with a time` : ""].filter(Boolean).join(" · ");
+  receipt(turn, "mission", same ? `Added to ${name}` : name, detail, missionHref(mission));
+  if (args.focus === true) {
+    await focusOn(ctx, String(mission._id));
+    focused(turn, mission, true);
+    return `Made "${name}" and turned focus on.`;
+  }
+  if (!mission.focusedAt) {
+    turn.choices.push(focusChoice(mission, ctx));
+    turn.ask ??= "Focus on it now?";
+  }
+  return `${same ? "Added to" : "Made"} "${name}", ${detail || "with nothing on it yet"}.`;
+}
+
+/** Runs a change on a mission, saying plainly when it can't. */
+async function changed(turn: Turn, id: string, change: Change): Promise<IMission> {
+  try {
+    const m = await changeMission(turn.ctx, id, change);
+    if (!m) throw new Unable("That didn’t save. Try again.");
+    turn.changed = true;
+    return m;
+  } catch (err) {
+    if (err instanceof NoSuchTask) throw new Unable("That task isn’t on the list any more.");
+    if (err instanceof Finished) throw new Unable("That mission has ended.");
+    throw err;
+  }
+}
+
+const taskCalled = (m: IMission, name: string | undefined) => (name ? closest(m.tasks, name, (t) => t.title) : null);
+
+// Words in a task's name that say which one it is: not "finish" or "the".
+const PLAIN = new Set(["finish", "start", "call", "make", "doing", "done", "with", "this", "that", "some", "more", "about", "today", "tonight", "work", "bit"]);
+const telling = (title: string) => keywords(title).filter((w) => w.length >= 3 && !PLAIN.has(w));
+
+/** The one open task whose telling words come up in what they said ("stuck on the charts in the deck": Finish the deck). */
+function taskMentioned(m: IMission, said: string): IMission["tasks"][number] | null {
+  const words = new Set(keywords(said));
+  const hits = m.tasks.filter((t) => ["todo", "stuck"].includes(t.status) && telling(t.title).some((w) => words.has(w)));
+  return hits.length === 1 ? hits[0] : null;
+}
+
+/** What's up after a change, in a line: what the writer would ask next anyway. */
+function upNext(m: IMission, turn: Turn): void {
+  const now = turn.ctx.now.getTime();
+  const { left, total } = tally(m.tasks);
+  if (total && !left) {
+    turn.ask ??= "That’s everything on the list.";
+    turn.choices.push({ label: "Wrap it up", detail: "", kind: "mission", tool: "end_mission", args: { how: "finish", mission: missionName(m, turn.ctx.day) }, editable: false, public: false, inputs: [], action: "" });
+    return;
+  }
+  const up = nextUp(m.tasks, now);
+  if (up) turn.ask ??= `Next: ${up.title}${up.at ? ` at ${clockText(new Date(up.at), turn.ctx.tz)}` : ""}.`;
+}
+
+async function missionTaskTool(turn: Turn, args: Args): Promise<string> {
+  const { ctx } = turn;
+  let m = await theMission(turn, str(args.mission));
+  const id = String(m._id);
+  const out: string[] = [];
+  const adding = taskWords(args.add);
+  if (adding.length) {
+    const tasks = parseTasks(adding, whenOn(ctx, m.day > ctx.day ? m.day : ctx.day));
+    m = await changed(turn, id, { do: "add", tasks });
+    receipt(turn, "mission", `Added to ${missionName(m, ctx.day)}`, tasks.map((t) => t.title).join(", "), m.focusedAt ? "/focus" : missionHref(m));
+    out.push(`Added ${tasks.map((t) => t.title).join(", ")}.`);
+    if (!m.focusedAt) {
+      turn.choices.push(focusChoice(m, ctx));
+      turn.ask ??= "Focus on it now?";
+    }
+  }
+  const action = str(args.do);
+  const name = str(args.task);
+  const at = str(args.at);
+  const minutes = typeof args.minutes === "number" && args.minutes > 0 ? Math.round(args.minutes) : null;
+  if (!action && !at && !minutes && !str(args.note)) {
+    if (out.length) return out.join(" ");
+    throw new Unable("Nothing to change.");
+  }
+  if (action === "pause") {
+    m = await changed(turn, id, { do: "pause" });
+    receipt(turn, "mission", "Paused", "", m.focusedAt ? "/focus" : missionHref(m));
+    return "Paused.";
+  }
+  const task = taskCalled(m, name) ?? (!name ? nextUp(m.tasks, ctx.now.getTime()) : null);
+  if (!task) throw new Unable(name ? `“${name}” isn’t on the list.` : "There’s nothing left on the list.", `The tasks are: ${m.tasks.map((t) => t.title).join(", ")}.`);
+  const note = str(args.note);
+  if (at || minutes) {
+    const when = at ? parseTasks([`x at ${at}`], whenOn(ctx, m.day > ctx.day ? m.day : ctx.day))[0]?.at : undefined;
+    m = await changed(turn, id, { do: "edit", task: task.id, ...(when ? { at: when } : {}), ...(minutes ? { minutes } : {}) });
+    receipt(turn, "mission", `Changed ${task.title}`, [at, minutes ? `${minutes} min` : ""].filter(Boolean).join(" · "), m.focusedAt ? "/focus" : missionHref(m));
+    out.push(`Changed ${task.title}.`);
+  }
+  switch (action) {
+    case "start":
+      m = await changed(turn, id, { do: "start", task: task.id });
+      receipt(turn, "mission", `Started ${task.title}`, task.minutes ? `${task.minutes} min on the timer` : "The clock’s running", "/focus");
+      break;
+    case "done":
+      m = await changed(turn, id, { do: "done", task: task.id, note });
+      receipt(turn, "mission", `Done: ${task.title}`, "", m.focusedAt ? "/focus" : missionHref(m));
+      upNext(m, turn);
+      break;
+    case "skip":
+      m = await changed(turn, id, { do: "skip", task: task.id });
+      receipt(turn, "mission", `Skipped ${task.title}`, "", m.focusedAt ? "/focus" : missionHref(m));
+      upNext(m, turn);
+      break;
+    case "stuck":
+      m = await changed(turn, id, { do: "stuck", task: task.id, note });
+      receipt(turn, "mission", `Stuck on ${task.title}`, note ?? "", m.focusedAt ? "/focus" : missionHref(m));
+      upNext(m, turn);
+      break;
+    case "back":
+      m = await changed(turn, id, { do: "back", task: task.id });
+      receipt(turn, "mission", `Back on the list: ${task.title}`, "", m.focusedAt ? "/focus" : missionHref(m));
+      break;
+    case "remove":
+      m = await changed(turn, id, { do: "remove", task: task.id });
+      receipt(turn, "mission", `Took off ${task.title}`, "", m.focusedAt ? "/focus" : missionHref(m));
+      break;
+    default:
+      if (note) {
+        m = await changed(turn, id, { do: "note", task: task.id, note });
+        receipt(turn, "mission", `Noted on ${task.title}`, note, m.focusedAt ? "/focus" : missionHref(m));
+      }
+  }
+  return [...out, action ? `${capFirst(action)}: ${task.title}.` : ""].filter(Boolean).join(" ");
+}
+
+async function setFocusTool(turn: Turn, args: Args): Promise<string> {
+  const { ctx } = turn;
+  if (args.on === false) {
+    const m = await focusOff(ctx);
+    if (!m) return "Focus wasn't on.";
+    const stretch = m.log.at(-1)?.text.split(" · ")[1];
+    receipt(turn, "mission", "Focus off", [missionName(m, ctx.day), stretch].filter(Boolean).join(" · "), missionHref(m));
+    focused(turn, m, false);
+    return "Focus is off. The list is still there.";
+  }
+  const until = str(args.until);
+  const when = whenOn(ctx);
+  const open = await openMissions(ctx);
+  if (!open.length && !until) throw new Unable("There’s nothing to focus on yet.", "start_mission with focus true makes something.");
+  const m = open.length ? await theMission(turn, str(args.mission)) : await createMission(ctx, { tasks: [] });
+  const on = await focusOn(ctx, String(m._id));
+  if (!on) throw new Unable("That didn’t save. Try again.");
+  const ends = until ? endsFrom(until, when) : null;
+  if (ends) await changed(turn, String(m._id), { do: "ends", endsAt: ends });
+  receipt(turn, "mission", "Focus on", [missionName(on, ctx.day), until ?? ""].filter(Boolean).join(" · "), "/focus");
+  focused(turn, on, true);
+  return `Focus is on for "${missionName(on, ctx.day)}".`;
+}
+
+async function endMissionTool(turn: Turn, args: Args): Promise<string> {
+  const { ctx } = turn;
+  const m = await theMission(turn, str(args.mission));
+  const how = args.how === "drop" ? "drop" : "finish";
+  const ended = await endMission(ctx, String(m._id), how);
+  if (!ended) throw new Unable("That didn’t save. Try again.");
+  turn.changed = true;
+  const t = toMissionT(ended, ctx);
+  const report = reportOf(t);
+  receipt(turn, "mission", how === "finish" ? `Wrapped up: ${t.name}` : `Dropped: ${t.name}`, report.line, missionHref(ended));
+  if (m.focusedAt) turn.actions.push({ type: "focus", on: false });
+  if (how === "finish" && report.left.length) {
+    turn.choices.push({ label: report.left.length === 1 ? `Keep ${report.left[0].title} as a thread` : `Keep the ${count(report.left.length)} left as threads`, detail: report.left.map((x) => x.title).join(", ").slice(0, 200), kind: "mission", tool: "keep_tasks", args: { mission: t._id }, editable: false, public: false, inputs: [], action: "" });
+    turn.ask ??= `${capFirst(plural(report.left.length, "thing"))} left. Keep track of ${report.left.length === 1 ? "it" : "them"}?`;
+  }
+  turn.actions.push({ type: "navigate", href: missionHref(ended) });
+  return `${how === "finish" ? "Wrapped up" : "Dropped"} "${t.name}": ${report.line}.`;
+}
+
+async function keepTasks(turn: Turn, args: Args): Promise<string> {
+  const kept = await keepAsThreads(turn.ctx, str(args.mission) ?? "");
+  if (!kept.length) throw new Unable("Those are already on your threads.");
+  turn.changed = true;
+  receipt(turn, "mission", `Kept ${plural(kept.length, "thread")}`, kept.join(", "), "/threads");
+  return "Kept.";
+}
+
+/** A day's list that's still going, moved on to today. Only ever from a tap. */
+async function carryMission(turn: Turn, args: Args): Promise<string> {
+  const m = await changed(turn, str(args.mission) ?? "", { do: "carry", day: turn.ctx.day });
+  receipt(turn, "mission", `On ${missionName(m, turn.ctx.day)}`, plural(tally(m.tasks).left, "task"), missionHref(m));
+  turn.choices.push(focusChoice(m, turn.ctx));
+  turn.ask ??= "Focus on it now?";
+  return "Carried over.";
+}
+
+async function runAgainTool(turn: Turn, args: Args): Promise<string> {
+  const { ctx } = turn;
+  const { past } = await listMissions(ctx);
+  const name = str(args.mission);
+  const old = (name ? closest(past, name, (m) => missionName(m, ctx.day)) : null) ?? (name ? null : past[0]);
+  if (!old) throw new Unable(name ? `I can’t find a mission called “${name}”.` : "There’s no mission to run again yet.");
+  const made = await runAgain(ctx, String(old._id));
+  if (!made) throw new Unable("That didn’t save. Try again.");
+  turn.changed = true;
+  receipt(turn, "mission", `Running again: ${missionName(made, ctx.day)}`, plural(made.tasks.length, "task"), missionHref(made));
+  turn.choices.push(focusChoice(made, ctx));
+  turn.ask ??= "Focus on it now?";
+  return `Started "${missionName(made, ctx.day)}" again.`;
+}
+
+/** Things they can say that settle it with no model: true when it's dealt with. */
+export async function missionTurn(turn: Turn, asked: Asked): Promise<boolean> {
+  const { ctx } = turn;
+  const now = ctx.now.getTime();
+  const inFocus = Boolean(ctx.user.focusMissionId);
+  try {
+    switch (asked.is) {
+      case "list": {
+        const day = asked.day === "tomorrow" ? addDays(ctx.day, 1) : ctx.day;
+        const args: Args = { tasks: asked.items, ...(day !== ctx.day ? { day } : {}) };
+        if (await askWithForm(turn, "start_mission", args)) return true;
+        await startMissionTool(turn, args);
+        return true;
+      }
+      case "focus": {
+        const open = await openMissions(ctx);
+        const on = asked.on.trim();
+        const length = asked.length.trim();
+        if (!on && !length && !open.length) return askWithForm(turn, "start_mission", { focus: true });
+        if (on) {
+          const holder = open.find((m) => closest(m.tasks, on, (t) => t.title));
+          const task = holder ? closest(holder.tasks, on, (t) => t.title) : null;
+          // "Focus on my health this year" is a goal, not a timer: only a task they have settles it.
+          if (!holder || !task) return false;
+          await setFocusTool(turn, { on: true, mission: missionName(holder, ctx.day), ...(length ? { until: length } : {}) });
+          await changed(turn, String(holder._id), { do: "start", task: task.id });
+          return true;
+        }
+        if (open.length > 1 && !open.some((m) => m.focusedAt)) {
+          for (const m of open.slice(0, 4)) turn.choices.push({ ...focusChoice(m, ctx), label: `Focus on ${missionName(m, ctx.day)}`.slice(0, 60), detail: "", args: { on: true, mission: missionName(m, ctx.day), ...(length ? { until: length } : {}) } });
+          turn.ask = "Which one?";
+          return true;
+        }
+        await setFocusTool(turn, { on: true, ...(length ? { until: length } : {}) });
+        return true;
+      }
+      case "unfocus":
+        if (!inFocus) return false;
+        await setFocusTool(turn, { on: false });
+        return true;
+      case "again":
+        await runAgainTool(turn, {});
+        return true;
+    }
+
+    // The rest are about the mission they're on.
+    const open = await openMissions(ctx);
+    const m = open.find((x) => x.focusedAt) ?? (open.length === 1 ? open[0] : null);
+    if (asked.is === "report") {
+      if (m && (inFocus || asked.named)) {
+        const t = toMissionT(m, ctx);
+        receipt(turn, "mission", t.name, reportOf(t).line, m.focusedAt ? "/focus" : missionHref(m));
+        return true;
+      }
+      if (!asked.named && !inFocus) {
+        const { past } = await listMissions(ctx);
+        const last = past[0];
+        // "How did we do?" just after finishing one.
+        if (!last?.endedAt || now - new Date(last.endedAt).getTime() > 3 * 3_600_000) return false;
+        const t = toMissionT(last, ctx);
+        receipt(turn, "mission", t.name, reportOf(t).line, missionHref(last));
+        return true;
+      }
+      return false;
+    }
+    if (!m) return false;
+    const up = nextUp(m.tasks, now);
+    const t = toMissionT(m, ctx);
+    switch (asked.is) {
+      case "where":
+        turn.ask = whereWeAre(t, now);
+        return true;
+      case "finish":
+        await endMissionTool(turn, { how: "finish", mission: missionName(m, ctx.day) });
+        return true;
+      case "drop":
+        await endMissionTool(turn, { how: "drop", mission: missionName(m, ctx.day) });
+        return true;
+    }
+    // Short orders mean this only in focus. Out of it, "done" could be about anything.
+    if (!inFocus) return false;
+    switch (asked.is) {
+      case "next":
+        turn.ask = up ? `Next: ${up.title}${up.at ? ` at ${clockText(new Date(up.at), ctx.tz)}` : ""}.` : "That’s everything on the list.";
+        return true;
+      case "pause":
+        await missionTaskTool(turn, { do: "pause" });
+        return true;
+      case "add":
+        await missionTaskTool(turn, { add: asked.items });
+        return true;
+      case "stuck": {
+        // "Stuck on the charts in the deck": the deck, with what's in the way. Anything less clear is for the model.
+        const named = asked.on ? taskCalled(m, asked.on) : null;
+        const about = named ? null : asked.on ? taskMentioned(m, asked.on) : null;
+        if (asked.on && !named && !about) return false;
+        await missionTaskTool(turn, { do: "stuck", ...(named ? { task: named.title } : {}), ...(about ? { task: about.title, note: asked.on } : {}) });
+        return true;
+      }
+      case "done":
+      case "skip":
+      case "start": {
+        const named = asked.task ? (taskCalled(m, asked.task) ?? taskMentioned(m, asked.task)) : null;
+        // Words that don't name a task may be about something else: the model can tell.
+        if (asked.task && !named) return false;
+        await missionTaskTool(turn, { do: asked.is, ...(named ? { task: named.title } : {}) });
+        return true;
+      }
+    }
+    return false;
+  } catch (err) {
+    if (err instanceof Unable) {
+      turn.ask = err.message;
+      return true;
+    }
+    throw err;
+  }
+}
+
 // ── Getting around ────────────────────────────────────────────────────────────
 
 const PAGES: Record<string, string> = {
@@ -1151,6 +1586,8 @@ const PAGES: Record<string, string> = {
   pages: "/history",
   letters: "/digest/weekly",
   breakdowns: "/breakdowns",
+  missions: "/missions",
+  focus: "/focus",
   threads: "/threads",
   memories: "/threads#memories",
   people: "/people",
@@ -1200,6 +1637,9 @@ const PLACES: Record<string, [page: string, name: string]> = {
   reports: ["breakdowns", "your breakdowns"],
   "weekly report": ["breakdowns", "your breakdowns"],
   "weekly reports": ["breakdowns", "your breakdowns"],
+  missions: ["missions", "your missions"],
+  mission: ["missions", "your missions"],
+  lists: ["missions", "your missions"],
   threads: ["threads", "your threads"],
   map: ["threads", "your threads"],
   memories: ["memories", "what I remember"],
@@ -1255,6 +1695,13 @@ const KIND_OF: Record<string, ReceiptKind> = {
   unfollow: "people",
   open_page: "open",
   make_breakdown: "breakdown",
+  start_mission: "mission",
+  mission_task: "mission",
+  set_focus: "mission",
+  end_mission: "mission",
+  run_mission_again: "mission",
+  keep_tasks: "mission",
+  carry_mission: "mission",
 };
 
 /** The specifics of a choice, from its arguments: which thread, when, what it would write. Not what its label says. */
@@ -1279,6 +1726,8 @@ function detailOf(tool: string, args: Args, label: string): string {
     follow: [str(args.handle) ? `@${str(args.handle)!.replace(/^@/, "")}` : ""],
     unfollow: [str(args.handle) ? `@${str(args.handle)!.replace(/^@/, "")}` : ""],
     open_page: [str(args.page)?.replace("_", " ")],
+    start_mission: [list(args.tasks).join(", ")],
+    mission_task: [str(args.task), str(args.do)],
   };
   const said = norm(label);
   return (parts[tool] ?? [])
@@ -1400,6 +1849,27 @@ async function formFor(turn: Turn, tool: string, args: Args): Promise<Form | nul
       const inputs = [input("text", "Write", "text", { value: str(args.text) ?? "", required: true, placeholder: "In your words" })];
       if (writable.length > 1) inputs.push(input("question", "Under", "pick", { options: writable.slice(0, 6).map((f) => ({ label: f.label.slice(0, 60), value: f.label.slice(0, 60) })), value: target.label.slice(0, 60) }));
       return { inputs, label: "Write on today’s page", action: "Write it", ask: "What should I write?" };
+    }
+    case "start_mission": {
+      if (taskWords(args.tasks).length) return null;
+      // "Let's focus", with nothing to focus on: how long is enough to start.
+      if (args.focus === true) {
+        return {
+          inputs: [
+            input("tasks", "On what", "text", { placeholder: "Taxes, then email" }),
+            input("until", "For how long", "text", { value: str(args.until) ?? "", options: ideas(["25 min", "1 hour", "2 hours"]), placeholder: "45 min, until 6pm" }),
+          ],
+          label: "Start a focus",
+          action: "Focus",
+          ask: "What are we focusing on?",
+        };
+      }
+      return {
+        inputs: [input("tasks", "What’s on it", "text", { required: true, placeholder: "Gym at 6pm for 45 min, taxes, call mum at 7" })],
+        label: str(args.day) ? "Make a list" : "Make today’s list",
+        action: "Make the list",
+        ask: "What’s on the list?",
+      };
     }
     case "set_check_in": {
       if (CHECK_INS.some((c) => c === args.when)) return null;
@@ -1609,10 +2079,15 @@ const RUN: Record<string, Tool> = {
   follow: (turn, args) => followTool(turn, args, follow),
   unfollow: (turn, args) => followTool(turn, args, unfollow),
   clear_notifications: clearNotifications,
+  start_mission: startMissionTool,
+  mission_task: missionTaskTool,
+  set_focus: setFocusTool,
+  end_mission: endMissionTool,
+  run_mission_again: runAgainTool,
 };
 
 /** What only a tap can run. */
-const COMMIT: Record<string, Tool> = { post_moment: postMoment, post_reply: postReply, go_public: goPublic, save_profile: saveProfile, send_message: sendMessageTool };
+const COMMIT: Record<string, Tool> = { keep_tasks: keepTasks, carry_mission: carryMission, post_moment: postMoment, post_reply: postReply, go_public: goPublic, save_profile: saveProfile, send_message: sendMessageTool };
 
 /**
  * Runs one tool call from the model. ok is false when nothing happened, or when the result

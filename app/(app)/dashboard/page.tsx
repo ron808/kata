@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth/authOptions";
 import { connectDB } from "@/lib/db/mongoose";
 import { Digest } from "@/lib/db/models/Digest";
@@ -8,6 +9,7 @@ import { isGroqConfigured } from "@/lib/ai/groq";
 import { loadCompanion, type CompanionState } from "@/lib/companion/load";
 import { namesFor } from "@/lib/companion/naming";
 import { dayToDate, localDay, validTimeZone } from "@/lib/companion/time";
+import { openMissions, toMissionT } from "@/lib/missions";
 import { loadFeed, loadPeople } from "@/lib/social/load";
 import { workingOn, type WorkingOnT } from "@/lib/social/working";
 import { buildAlmanac } from "@/lib/utils/almanac";
@@ -19,11 +21,12 @@ import { AlmanacLegend, YearAlmanac } from "@/components/shared/YearAlmanac";
 import { LetterCard } from "@/components/dashboard/LetterCard";
 import { StatsRow } from "@/components/dashboard/StatsRow";
 import { HomeBoard } from "@/components/home/HomeBoard";
+import { MissionCard } from "@/components/missions/MissionCard";
 import { PeopleRow } from "@/components/home/PeopleRow";
 import { PeopleProvider } from "@/components/people/viewer";
 import { TodayQuestions } from "@/components/home/TodayQuestions";
 import { WorkingOn } from "@/components/home/WorkingOn";
-import type { DigestSummary, MomentT, PersonT } from "@/lib/types";
+import type { DigestSummary, MissionT, MomentT, PersonT } from "@/lib/types";
 
 const CHECK_IN_LINE = {
   morning: "Checks in every morning",
@@ -32,6 +35,9 @@ const CHECK_IN_LINE = {
 } as const;
 
 interface HomeData {
+  /** In focus, home is the focus screen. */
+  focus: boolean;
+  missions: MissionT[];
   companion: CompanionState;
   tz: string;
   today: string;
@@ -50,22 +56,26 @@ interface HomeData {
 async function loadHome(userId: string): Promise<HomeData | null> {
   try {
     await connectDB();
-    const user = await User.findById(userId).select("name handle timezone checkIn activeTemplateId onboardedAt streak longestStreak totalEntries totalWords").lean();
+    const user = await User.findById(userId).select("name handle timezone checkIn activeTemplateId onboardedAt streak longestStreak totalEntries totalWords focusMissionId").lean();
     if (!user) return null;
     const tz = validTimeZone(user.timezone);
-    const [companion, entries, letter, feed, people, working] = await Promise.all([
+    if (user.focusMissionId) return { focus: true } as HomeData;
+    const [companion, entries, letter, feed, people, working, missions] = await Promise.all([
       loadCompanion(userId),
       Entry.find({ userId }).select("date wordCount").sort({ date: -1 }).limit(366).lean(),
       Digest.findOne({ userId, isRead: false }).sort({ createdAt: -1 }).lean(),
       loadFeed(userId, { scope: "following" }),
       loadPeople(userId, {}),
       workingOn(userId),
+      openMissions({ userId }),
     ]);
     const today = localDay(tz);
     const todayEntry = entries.find((e) => isoDay(e.date) === today);
     const totalEntries = user.totalEntries ?? entries.length;
     const totalWords = user.totalWords ?? 0;
     return {
+      focus: false,
+      missions: missions.map((m) => toMissionT(m, { tz, day: today, now: new Date() })),
       companion,
       tz,
       today,
@@ -116,6 +126,7 @@ export default async function HomePage() {
   const session = await auth();
   // The greeting uses what they asked to be called.
   const [data, { name, nickname: first }] = await Promise.all([loadHome(session!.user.id), namesFor(session!.user.id)]);
+  if (data?.focus) redirect("/focus");
   const tz = data?.tz ?? "UTC";
   const now = new Date();
 
@@ -152,6 +163,13 @@ export default async function HomePage() {
       ) : (
         <>
           {data.needsSetup ? <SetupCard name={name} /> : null}
+          {data.missions.length ? (
+            <div className="mt-6 grid grid-cols-1 gap-4">
+              {data.missions.slice(0, 2).map((m) => (
+                <MissionCard key={m._id} mission={m} />
+              ))}
+            </div>
+          ) : null}
 
           <div className="mt-8">
             <HomeBoard

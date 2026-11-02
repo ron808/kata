@@ -5,7 +5,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { signOut } from "next-auth/react";
 import { useEffect, useRef, useState } from "react";
+import { FocusBar } from "@/components/focus/FocusBar";
+import { FOCUS_EVENT, type FocusChange } from "@/components/focus/mode";
 import type { Names } from "@/lib/companion/naming";
+import type { FocusState, FocusTheme } from "@/lib/types";
 import { AskMaru } from "./AskMaru";
 import { Avatar } from "./Avatar";
 import { CompanionProvider } from "./Companion";
@@ -22,6 +25,9 @@ export interface ShellUser {
   timezone: string | null;
   /** What they call their companion, and what it calls them. */
   names: Names;
+  /** The mission they're focused on, if any. */
+  focus: FocusState | null;
+  focusTheme: FocusTheme;
 }
 
 const NAV: { href: string; label: string; icon: IconName }[] = [
@@ -29,6 +35,7 @@ const NAV: { href: string; label: string; icon: IconName }[] = [
   { href: "/people", label: "People", icon: "people" },
   { href: "/messages", label: "Messages", icon: "chat" },
   { href: "/threads", label: "Threads", icon: "threads" },
+  { href: "/missions", label: "Missions", icon: "target" },
   { href: "/history", label: "Pages", icon: "history" },
   { href: "/breakdowns", label: "Breakdowns", icon: "chart" },
   { href: "/digest/weekly", label: "Letters", icon: "letter" },
@@ -63,6 +70,7 @@ export function AppShell({
   const focused = writing || pathname === "/settings/template";
   // The companion's colour: on the shell for the first paint, on <html> for dialogs and toasts outside it.
   const maru = user.names.hue ?? undefined;
+  const { on: inFocus, theme } = useFocusMode(user);
   // Today follows the writer: someone who travels shouldn't stay on the day they left behind.
   useEffect(() => {
     const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -83,6 +91,27 @@ export function AppShell({
       delete html.dataset.maru;
     };
   }, [maru]);
+
+  // Focus: the whole app goes over to one mission, in its own colours, with only the way out left.
+  if (inFocus) {
+    return (
+      <CompanionProvider names={user.names}>
+        <div data-maru={maru} data-focus={theme} className="min-h-svh bg-ground text-ink">
+          <a
+            href="#main"
+            className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60] focus:rounded-full focus:bg-ink focus:px-4 focus:py-2.5 focus:text-ground"
+          >
+            Skip to content
+          </a>
+          <FocusBar focus={user.focus} />
+          <main id="main" className="min-w-0">
+            {children}
+          </main>
+          <AskMaru pathname={pathname} focused />
+        </div>
+      </CompanionProvider>
+    );
+  }
 
   return (
     <CompanionProvider names={user.names}>
@@ -219,6 +248,46 @@ export function AppShell({
   );
 }
 
+/**
+ * Whether focus is on, and in which colours. The server says, and a change made here shows at once
+ * rather than after the page has been fetched again. On <html> too, for what sits outside the
+ * shell, and remembered for the first paint of the focus screen.
+ */
+function useFocusMode(user: ShellUser): { on: boolean; theme: FocusTheme } {
+  const told = user.focus ? `${user.focus.missionId}:${user.focusTheme}` : `:${user.focusTheme}`;
+  const [seen, setSeen] = useState(told);
+  const [change, setChange] = useState<FocusChange>({});
+  if (told !== seen) {
+    setSeen(told);
+    setChange({});
+  }
+  const on = change.on ?? Boolean(user.focus);
+  const theme = change.theme ?? user.focusTheme;
+
+  useEffect(() => {
+    const onChange = (e: Event) => setChange((c) => ({ ...c, ...(e as CustomEvent<FocusChange>).detail }));
+    window.addEventListener(FOCUS_EVENT, onChange);
+    return () => window.removeEventListener(FOCUS_EVENT, onChange);
+  }, []);
+
+  useEffect(() => {
+    const html = document.documentElement;
+    if (on) html.dataset.focus = theme;
+    else delete html.dataset.focus;
+    try {
+      if (on) localStorage.setItem("kata-focus", theme);
+      else localStorage.removeItem("kata-focus");
+    } catch {
+      // Storage blocked: the first paint just starts in the usual colours.
+    }
+    return () => {
+      delete html.dataset.focus;
+    };
+  }, [on, theme]);
+
+  return { on, theme };
+}
+
 /** Messages waiting: from the page load, then checked every so often and on every page change. */
 function useUnreadMessages(atLoad: number, pathname: string): number {
   const [count, setCount] = useState(atLoad);
@@ -324,6 +393,7 @@ function AccountMenu({
     { href: profileHref, label: "Your profile", icon: "user" },
     ...(compact
       ? ([
+          { href: "/missions", label: "Missions", icon: "target" },
           { href: "/breakdowns", label: "Breakdowns", icon: "chart" },
           { href: "/digest/weekly", label: "Letters", icon: "letter" },
           { href: "/templates", label: "Gallery", icon: "gallery" },

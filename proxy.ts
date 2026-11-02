@@ -16,6 +16,8 @@ const PROTECTED = [
   "/lab",
   "/breakdowns",
   "/messages",
+  "/missions",
+  "/focus",
 ];
 
 export default auth((req) => {

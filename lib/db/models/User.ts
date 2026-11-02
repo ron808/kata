@@ -36,6 +36,10 @@ export interface IUser {
   nickname: string;
   /** The hue the companion wears (1–7), or null for vermilion. */
   companionHue: number | null;
+  /** The mission they're focused on, which turns the whole app over to it. */
+  focusMissionId: mongoose.Types.ObjectId | null;
+  /** The colours focus wears. */
+  focusTheme: FocusTheme;
   createdAt: Date;
 }
 
@@ -44,6 +48,9 @@ export interface IMemory {
   text: string;
   at: Date;
 }
+
+export const FOCUS_THEMES = ["sea", "moss", "ember"] as const;
+export type FocusTheme = (typeof FOCUS_THEMES)[number];
 
 export const CHECK_INS = ["morning", "evening", "both"] as const;
 export type CheckIn = (typeof CHECK_INS)[number];
@@ -95,6 +102,8 @@ const UserSchema = new Schema<IUser>(
     companionName: { type: String, default: "", trim: true, maxlength: 20 },
     nickname: { type: String, default: "", trim: true, maxlength: 30 },
     companionHue: { type: Number, default: null, min: 1, max: 7 },
+    focusMissionId: { type: Schema.Types.ObjectId, ref: "Mission", default: null },
+    focusTheme: { type: String, enum: FOCUS_THEMES, default: "sea" },
     createdAt: { type: Date, default: Date.now },
   },
   { timestamps: false }

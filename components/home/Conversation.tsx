@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Icon } from "@/components/shared/Icon";
 import { MaruMark } from "@/components/shared/Avatar";
-import { ASK_EVENT, REPLIED_EVENT, useCompanion, type Focus, type Replied } from "@/components/shared/Companion";
+import { focusChanged } from "@/components/focus/mode";
+import { ASK_EVENT, HELLO_EVENT, REPLIED_EVENT, useCompanion, type Focus, type Replied } from "@/components/shared/Companion";
 import { postsInView } from "@/components/shared/screen";
 import { setTheme } from "@/components/shared/ThemeToggle";
 import { useToast } from "@/components/shared/Toast";
@@ -21,6 +22,8 @@ const PROMPTS: [label: string, says: string][] = [
 ];
 
 const MOOD_LABELS = ["Foggy", "Low", "Okay", "Good", "Bright"];
+
+const isHello = (m: KataMessage) => m.hello === true;
 
 /** The morning mood check, or the evening "How did today go?", which offers the same five steps. */
 function asksMood(m: KataMessage) {
@@ -99,7 +102,20 @@ export function Conversation({
     return () => window.removeEventListener(ASK_EVENT, onAsk);
   }, [dock]);
 
+  // Maru said hi as they came back. Any hello before it was unanswered, and it's gone now.
+  useEffect(() => {
+    if (dock) return;
+    const onHello = (e: Event) => {
+      const hello = (e as CustomEvent<KataMessage>).detail;
+      setMessages((ms) => [...ms.filter((m) => m.answer || !isHello(m)), hello]);
+    };
+    window.addEventListener(HELLO_EVENT, onHello);
+    return () => window.removeEventListener(HELLO_EVENT, onHello);
+  }, [dock]);
+
   function perform(actions: ClientAction[]) {
+    const focusing = actions.find((a) => a.type === "focus");
+    if (focusing?.type === "focus") focusChanged({ on: focusing.on });
     for (const a of actions) {
       if (a.type === "theme") setTheme(a.value);
       // Today's page, if it's open, adds the same words so its next autosave keeps them.
@@ -111,7 +127,9 @@ export function Conversation({
     if (go?.type === "navigate") {
       dock?.onNavigate?.();
       router.push(go.href);
-    } else if (actions.some((a) => a.type === "refresh")) router.refresh();
+      // The shell is outside the page: it has to hear about focus too.
+      if (focusing) router.refresh();
+    } else if (focusing || actions.some((a) => a.type === "refresh")) router.refresh();
   }
 
   // Keep the newest line in view inside the card: at once on first paint, gently after you

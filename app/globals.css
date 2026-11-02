@@ -115,6 +115,62 @@
   --raised: #383028;
 }
 
+/* Focus: the app handed over to one mission, in its own quiet colours, whichever theme they use.
+   The outlines drop back so what's left on screen is what they're doing. Set on <html> and on the
+   shell (first paint), so shadows are declared here too: they read --edge where they're declared. */
+:root[data-focus],
+[data-focus] {
+  --ok: #6fe0ae;
+  --bad: #ff9b85;
+  --warn: #ffd36b;
+  --info: #9ed3ff;
+  --on-hue: #16120e;
+  --on-sun: #2b1f00;
+  --tape: rgb(255 255 255 / 0.2);
+  --t0: #4b2118; --t1: #453710; --t2: #13324e; --t3: #13392b; --t4: #2d2650; --t5: #4a1f36; --t6: #0f3a3a; --t7: #4a2c11;
+  --d0: #ffc7b9; --d1: #ffe29a; --d2: #bde2ff; --d3: #b4ecd2; --d4: #d8d0ff; --d5: #ffc4e2; --d6: #aeecec; --d7: #ffd0a3;
+  --shadow-sticker: 4px 4px 0 var(--edge);
+  --shadow-sticker-sm: 3px 3px 0 var(--edge);
+  --shadow-float: 0 18px 40px -18px rgb(0 0 0 / 0.8);
+  color-scheme: dark;
+}
+
+:root[data-focus="sea"],
+[data-focus="sea"] {
+  --ground: #0d1626;
+  --surface: #15223a;
+  --raised: #1e2e4a;
+  --ink: #e8f0ff;
+  --edge: #5b79a9;
+  --accent: #5cc8ff;
+  --on-accent: #05202e;
+  --sun: #ffd76a;
+}
+
+:root[data-focus="moss"],
+[data-focus="moss"] {
+  --ground: #0e1a15;
+  --surface: #16271f;
+  --raised: #1f352a;
+  --ink: #e8f6ee;
+  --edge: #5c8f76;
+  --accent: #5fe3a1;
+  --on-accent: #06231a;
+  --sun: #f2df7c;
+}
+
+:root[data-focus="ember"],
+[data-focus="ember"] {
+  --ground: #1a1016;
+  --surface: #281822;
+  --raised: #36222e;
+  --ink: #fbeef3;
+  --edge: #a4768b;
+  --accent: #ff9466;
+  --on-accent: #2b0e03;
+  --sun: #ffc857;
+}
+
 [data-hue="0"] { --hue: var(--h0); --tint: var(--t0); --deep: var(--d0); }
 [data-hue="1"] { --hue: var(--h1); --tint: var(--t1); --deep: var(--d1); }
 [data-hue="2"] { --hue: var(--h2); --tint: var(--t2); --deep: var(--d2); }

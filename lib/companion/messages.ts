@@ -36,6 +36,7 @@ export interface Draft {
   mood?: number | null;
   done?: IReceipt[];
   choices?: IChoice[];
+  hello?: boolean;
   _id?: Types.ObjectId;
 }
 
@@ -59,6 +60,7 @@ function draftsToDocs(
     done: d.done ?? [],
     choices: d.choices ?? [],
     day,
+    ...(d.hello ? { hello: true } : {}),
     createdAt: new Date(at.getTime() + i),
   }));
 }
@@ -85,6 +87,7 @@ export function toKataMessage(m: ICompanionMessage): KataMessage {
     _id: String(m._id),
     from: m.from,
     kind: m.kind,
+    ...(m.hello ? { hello: true } : {}),
     text: m.text,
     threadId: m.threadId ? String(m.threadId) : null,
     replies: (m.replies ?? []).map((r) => ({ label: r.label, value: r.value })),
