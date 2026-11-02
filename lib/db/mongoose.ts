@@ -1,10 +1,12 @@
 import mongoose from "mongoose";
+import type { IndexReport } from "./indexes";
 
 const MONGODB_URI = process.env.MONGODB_URI;
 
 interface MongooseCache {
   conn: typeof mongoose | null;
   promise: Promise<typeof mongoose> | null;
+  indexes: Promise<IndexReport> | null;
 }
 
 declare global {
@@ -12,7 +14,17 @@ declare global {
 }
 
 const cached: MongooseCache =
-  global._mongooseCache ?? (global._mongooseCache = { conn: null, promise: null });
+  global._mongooseCache ?? (global._mongooseCache = { conn: null, promise: null, indexes: null });
+
+/** Once per instance: makes the database's indexes follow the schemas, however they drifted. */
+export function checkIndexes(): Promise<IndexReport> {
+  return (cached.indexes ??= import("./indexes")
+    .then(({ repairIndexes }) => repairIndexes())
+    .catch((err) => {
+      console.error("db:indexes", err);
+      return { repaired: [], failed: ["all"] };
+    }));
+}
 
 export async function connectDB() {
   if (!MONGODB_URI) {
@@ -41,6 +53,8 @@ export async function connectDB() {
     cached.promise = null;
     throw err;
   }
+  // Not awaited: nobody's request should wait for it.
+  void checkIndexes();
   return cached.conn;
 }
 

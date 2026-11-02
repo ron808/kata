@@ -64,6 +64,12 @@ Kata (型, "form, pattern") is a daily journal with a companion that checks in o
 - Maru's take, two or three sentences, is written once, the first time a breakdown is opened (`writeTake`, `POST /api/breakdowns/[id]/take`). It gets the facts in words without the number, or it repeats the score.
 - "Give me a breakdown", "break down last month" and "how was my week" are matched in code (`breakdownAsked`) with no model. Anything else goes to the model, and the keyword router adds `make_breakdown` even to questions. A reply that reads the breakdown back is dropped: the receipt says it.
 
+## The database
+
+- Mongo never changes an existing index, and mongoose doesn't tell anyone when it can't build one: change an index's rules in a schema and the database keeps the old ones until something fails for writers. `repairIndexes` (`lib/db/indexes.ts`) runs once per instance, from `connectDB`, and replaces an index that has the same keys and different rules; it leaves anything no schema mentions, and skips previews, which share the live database. A new model goes in its list.
+- `GET /api/health` says whether the database answers and its indexes match the code. Check it after a deploy that touches a schema.
+- The live database is a free Atlas cluster, which pauses after long inactivity: its address then stops resolving (`querySrv ENOTFOUND`). The daily cron connects, which keeps it awake.
+
 ## Building blocks
 
 Reuse these before writing new markup: `Button` / `buttonClass`, `AppPage` + `PageHeader` + `Section` + `EmptyNote`, `TextField` + `FormAlert`, `Avatar` + `KataMark` + `MaruMark`, `AskMaru`, `useCompanion` / `askAbout` (`components/shared/Companion.tsx`), `Receipts` + `Choices` (`components/home/Work.tsx`, forms included), `MaruColours`, `ConversationList` + `Chat` (`components/messages`), `YourPages` (`components/templates`), `BreakdownView` + `BreakdownList` + `MakeBreakdown`, `DayStrip` / `DayBars` / `Meter` (`components/breakdowns`), `ThreadFields`, `postsInView` / `watchPosts` (`components/shared/screen.ts`), `Status` (+ `STATUS_LABEL`, `KIND_LABEL`), `Icon` (one 24px line family), `Logo`, `Seal`, `ThemeToggle`, `Toast` (`useToast`), `Today`, `YearAlmanac`, `FieldRenderer` (read-only renders values typographically), `FormPreview`. Server loaders: `loadCompanion` (`lib/companion`), `listBreakdowns` / `getBreakdown` (`lib/breakdowns`), `loadFeed` / `loadProfile` / `loadPeople` / `loadNotifications` / `loadMe` (`lib/social/load.ts`).
