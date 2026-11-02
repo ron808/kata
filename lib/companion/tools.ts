@@ -905,7 +905,7 @@ async function updateProfile(turn: Turn, args: Args): Promise<string> {
     if (handle) {
       turn.choices.push({
         label: "Make it public",
-        detail: "People could find you in Discover and see what you share. They never see your pages.",
+        detail: "Anyone on Kata could find you by name and message you, and see what you share in Discover. They never see your pages.",
         kind: "settings",
         tool: "go_public",
         args: {},
@@ -1574,7 +1574,7 @@ async function goPublic(turn: Turn): Promise<string> {
   if (!handle) throw new Unable("Going public needs a handle first. Pick one in Settings.");
   await User.updateOne({ _id: turn.ctx.userId }, { $set: { isPublic: true } });
   turn.actions.push({ type: "refresh" });
-  receipt(turn, "settings", "Your profile is public", "People can find you in Discover. They never see your pages.", `/u/${handle}`);
+  receipt(turn, "settings", "Your profile is public", "Anyone on Kata can find you by name and message you. They never see your pages.", `/u/${handle}`);
   return "Public.";
 }
 

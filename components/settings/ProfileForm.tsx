@@ -10,6 +10,7 @@ import { Icon } from "@/components/shared/Icon";
 import { FormAlert, TextField } from "@/components/shared/TextField";
 import { useToast } from "@/components/shared/Toast";
 import { HandleField, useHandleStatus } from "./HandleField";
+import { PublicSwitch } from "./PublicSwitch";
 
 export interface ProfileValues {
   name: string;
@@ -194,13 +195,31 @@ export function ProfileForm({
 
         <PublicSwitch
           id={`${ids}-public`}
+          label="Public profile"
           on={isPublic}
           onChange={(v) => {
             setIsPublic(v);
             setErrors((x) => ({ ...x, isPublic: undefined }));
           }}
           error={errors.isPublic}
-        />
+        >
+          <dl className="rule mt-4 grid grid-cols-1 gap-3 border-t-2 pt-4 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="flex items-center gap-1.5 font-semibold">
+                <Icon name="eye" className="h-4 w-4" />
+                What others see
+              </dt>
+              <dd className="mt-1 text-ink/75">Your name, handle, bio and what fills your days, the moments you share, and threads you choose to show.</dd>
+            </div>
+            <div>
+              <dt className="flex items-center gap-1.5 font-semibold">
+                <Icon name="lock" className="h-4 w-4" />
+                Never shown
+              </dt>
+              <dd className="mt-1 text-ink/75">Your pages, your email, and every thread you keep to yourself.</dd>
+            </div>
+          </dl>
+        </PublicSwitch>
       </div>
 
       <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
@@ -213,75 +232,3 @@ export function ProfileForm({
   );
 }
 
-function PublicSwitch({
-  id,
-  on,
-  onChange,
-  error,
-}: {
-  id: string;
-  on: boolean;
-  onChange: (on: boolean) => void;
-  error?: string;
-}) {
-  return (
-    <div className="well p-4 sm:p-5">
-      <div className="flex items-start gap-4">
-        <div className="min-w-0 flex-1">
-          <p id={`${id}-label`} className="font-semibold">
-            Public profile
-          </p>
-          <p id={`${id}-desc`} className="mt-1 text-sm text-ink/75">
-            {on
-              ? "People can find you in Discover, and your public moments can show up there."
-              : "You’re not listed in Discover. People who know your handle can still open your profile."}
-          </p>
-        </div>
-        <button
-          id={id}
-          type="button"
-          role="switch"
-          aria-checked={on}
-          aria-labelledby={`${id}-label`}
-          aria-describedby={`${id}-desc${error ? ` ${id}-err` : ""}`}
-          onClick={() => onChange(!on)}
-          className="group grid h-11 w-16 shrink-0 place-items-center rounded-full"
-        >
-          <span
-            aria-hidden
-            className={`relative h-8 w-14 rounded-full border-2 border-edge shadow-sticker-sm transition-colors duration-300 ${
-              on ? "bg-sun" : "bg-surface"
-            }`}
-          >
-            <span
-              className={`absolute left-[3px] top-1/2 h-5 w-5 -translate-y-1/2 rounded-full border-2 border-edge bg-ink transition-transform duration-300 ease-out ${
-                on ? "translate-x-6" : ""
-              }`}
-            />
-          </span>
-        </button>
-      </div>
-      {error ? (
-        <p id={`${id}-err`} role="alert" className="mt-3 text-sm font-medium text-bad">
-          {error}
-        </p>
-      ) : null}
-      <dl className="rule mt-4 grid grid-cols-1 gap-3 border-t-2 pt-4 text-sm sm:grid-cols-2">
-        <div>
-          <dt className="flex items-center gap-1.5 font-semibold">
-            <Icon name="eye" className="h-4 w-4" />
-            What others see
-          </dt>
-          <dd className="mt-1 text-ink/75">Your name, handle, bio and what fills your days, the moments you share, and threads you choose to show.</dd>
-        </div>
-        <div>
-          <dt className="flex items-center gap-1.5 font-semibold">
-            <Icon name="lock" className="h-4 w-4" />
-            Never shown
-          </dt>
-          <dd className="mt-1 text-ink/75">Your pages, your email, and every thread you keep to yourself.</dd>
-        </div>
-      </dl>
-    </div>
-  );
-}

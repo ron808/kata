@@ -441,7 +441,7 @@ function YouCard({ me, followingDelta }: { me: PeopleMe; followingDelta: number 
         <p className="mt-4 flex gap-2 border-t-2 border-edge/15 pt-4 text-[0.8125rem] text-ink/75">
           <Icon name="lock" className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
-            Unlisted: you don’t show up in Discover or Find people.{" "}
+            Unlisted: only someone who types your whole handle can find you.{" "}
             <Link href="/settings#profile" className="link font-semibold text-ink">
               Change
             </Link>
@@ -782,7 +782,7 @@ function FindPanel({
             ) : filtered ? (
               <Empty
                 title={view.q ? `No one matches “${view.q}”.` : "No one matches those filters."}
-                body="Only people who list themselves publicly can be found."
+                body="Someone unlisted only shows up when you type their whole handle."
                 actions={
                   <Button
                     variant="secondary"

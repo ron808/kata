@@ -73,6 +73,7 @@ export function OnboardingFlow({
   firstName,
   currentHandle,
   suggestedHandle,
+  isPublic,
   interestTags,
   today,
   hasPage,
@@ -80,6 +81,8 @@ export function OnboardingFlow({
   firstName: string;
   currentHandle: string | null;
   suggestedHandle: string | null;
+  /** Whether they're listed now. New accounts aren't until they say so. */
+  isPublic: boolean;
   /** They already have a daily page, which stays: there's no choosing one. */
   hasPage: boolean;
   /** Topics Kata has questions for (the question bank's tags). */
@@ -105,6 +108,7 @@ export function OnboardingFlow({
   const [handle, setHandle] = useState(currentHandle ?? suggestedHandle ?? "");
   const [handleSkipped, setHandleSkipped] = useState(false);
   const [handleError, setHandleError] = useState<string | null>(null);
+  const [listed, setListed] = useState(isPublic);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -197,7 +201,7 @@ export function OnboardingFlow({
             ? "Keeping it."
             : `Keeping all ${fields.length}.`;
       case "handle":
-        return claimed ? `@${claimed}` : "I’ll skip this for now.";
+        return claimed ? `@${claimed}, ${listed ? "listed" : "not listed"}.` : "I’ll skip this for now.";
       default:
         return "";
     }
@@ -209,12 +213,17 @@ export function OnboardingFlow({
     setSaveError(null);
     setSaid(`${companion} is setting things up.`);
     try {
+      // Skipping leaves things as they were: with no handle there's nothing to list.
       const h = handleSkipped ? "" : cleanHandle(handle);
-      if (h && h !== currentHandle) {
+      const profile = {
+        ...(h && h !== currentHandle ? { handle: h } : {}),
+        ...(h && listed !== isPublic ? { isPublic: listed } : {}),
+      };
+      if (Object.keys(profile).length) {
         const res = await fetch("/api/profile", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ handle: h }),
+          body: JSON.stringify(profile),
         });
         if (!res.ok) {
           const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -338,6 +347,8 @@ export function OnboardingFlow({
               setHandle(v);
               setHandleError(null);
             }}
+            listed={listed}
+            onListed={setListed}
             onUse={() => {
               setHandleSkipped(false);
               done();

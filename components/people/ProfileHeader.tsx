@@ -91,8 +91,8 @@ export function ProfileHeader({ person, unlisted = false }: { person: PersonT; u
             <p className="mt-5 flex max-w-[40rem] gap-2 text-[0.875rem] text-ink/75">
               <Icon name="lock" className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
-                Your profile is unlisted: you don’t show up in Discover or Find people, though anyone with your handle can open
-                this page.{" "}
+                Your profile is unlisted: only someone who types your whole handle can find you, and your moments stay out of
+                Discover.{" "}
                 <Link href="/settings#profile" className="link font-semibold text-ink">
                   List it in settings
                 </Link>

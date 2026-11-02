@@ -3,6 +3,7 @@
 import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { FIELD_TYPE_META } from "@/components/builder/fieldTypes";
 import { HandleField, type HandleStatus } from "@/components/settings/HandleField";
+import { PublicSwitch } from "@/components/settings/PublicSwitch";
 import { Button } from "@/components/shared/Button";
 import { MaruColours } from "@/components/shared/MaruColours";
 import { Icon } from "@/components/shared/Icon";
@@ -239,6 +240,8 @@ export function HandleChoice({
   onChange,
   status,
   error,
+  listed,
+  onListed,
   onUse,
   onSkip,
   labelledBy,
@@ -248,6 +251,8 @@ export function HandleChoice({
   onChange: (value: string) => void;
   status: HandleStatus;
   error: string | null;
+  listed: boolean;
+  onListed: (listed: boolean) => void;
   onUse: () => void;
   onSkip: () => void;
   labelledBy: string;
@@ -260,6 +265,7 @@ export function HandleChoice({
   return (
     <form onSubmit={onSubmit} aria-labelledby={labelledBy} className="w-full max-w-[26rem]">
       <HandleField id={id} value={value} onChange={onChange} status={status} error={error} />
+      <PublicSwitch id={`${id}-listed`} label="List me so people can find me" on={listed} onChange={onListed} className="mt-3" />
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Button type="submit" variant="secondary" disabled={!ready} className="max-w-full">
           <span className="truncate">{ready ? `Use @${value}` : "Use this handle"}</span>

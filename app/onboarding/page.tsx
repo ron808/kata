@@ -42,6 +42,7 @@ export default async function OnboardingPage() {
           firstName={first}
           currentHandle={me.handle}
           suggestedHandle={me.suggestedHandle ?? null}
+          isPublic={me.isPublic}
           interestTags={INTEREST_TAGS}
           hasPage={Boolean(await User.exists({ _id: session.user.id, activeTemplateId: { $ne: null } }))}
           today={formatDate(new Date(), "long", "UTC")}
