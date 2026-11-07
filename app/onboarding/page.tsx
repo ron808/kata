@@ -13,7 +13,11 @@ import { Logo } from "@/components/shared/Logo";
 
 export const metadata: Metadata = { title: "Set up · Kata" };
 
-export default async function OnboardingPage() {
+export default async function OnboardingPage({ searchParams }: { searchParams: Promise<{ follow?: string }> }) {
+  const raw = (await searchParams).follow;
+  // Came from someone's shared profile: setup ends there, so following them is the next tap.
+  const follow = typeof raw === "string" && /^[a-z0-9_]{3,24}$/i.test(raw) ? raw.toLowerCase() : null;
+  const after = follow ? `/u/${follow}` : "/dashboard";
   const session = await auth();
   if (!session?.user?.id) redirect("/login?from=/onboarding");
 
@@ -33,12 +37,13 @@ export default async function OnboardingPage() {
         <Link href="/" aria-label="Kata, home" className="-mx-1 flex min-h-11 items-center px-1">
           <Logo cut="ground" />
         </Link>
-        <Link href="/dashboard" className={buttonClass({ variant: "quiet" })}>
+        <Link href={after} className={buttonClass({ variant: "quiet" })}>
           Skip for now
         </Link>
       </header>
       <main id="main" className="mx-auto max-w-[80rem] pb-16 pt-[clamp(1rem,4svh,3rem)] lg:pb-24">
         <OnboardingFlow
+          after={after}
           firstName={first}
           currentHandle={me.handle}
           suggestedHandle={me.suggestedHandle ?? null}

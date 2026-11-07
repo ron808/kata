@@ -20,8 +20,14 @@ const PROTECTED = [
   "/focus",
 ];
 
+// A shared profile link: kata-day.vercel.app/@handle. A profile opened signed out shows the same card.
+const SHARED = /^\/@([a-z0-9_]{3,24})\/?$/i;
+const PROFILE = /^\/u\/([a-z0-9_]{3,24})\/?$/i;
+
 export default auth((req) => {
   const { pathname } = req.nextUrl;
+  const shared = pathname.match(SHARED) ?? (req.auth?.user?.id ? null : pathname.match(PROFILE));
+  if (shared) return NextResponse.rewrite(new URL(`/share/${shared[1].toLowerCase()}`, req.url));
   const needsAuth = PROTECTED.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`)
   );

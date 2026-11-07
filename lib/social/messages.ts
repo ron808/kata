@@ -2,7 +2,6 @@ import { Types } from "mongoose";
 import { Conversation, conversationKey, type IConversation } from "@/lib/db/models/Conversation";
 import { DirectMessage, MESSAGE_MAX, type IDirectMessage } from "@/lib/db/models/DirectMessage";
 import { Follow } from "@/lib/db/models/Follow";
-import { Template } from "@/lib/db/models/Template";
 import { User } from "@/lib/db/models/User";
 import type { ConversationT, DirectMessageT, ThreadOpenT } from "@/lib/types";
 import { isObjectId } from "./db";
@@ -10,10 +9,10 @@ import { hueOf } from "./dto";
 import { HANDLE_PATTERN, NEEDS_HANDLE, normalizeHandle } from "./handles";
 
 /*
- * Messages between two people. Anyone with a handle can write to someone whose profile is
- * public, who follows them, or who put their name on a page in the gallery; otherwise a
- * private profile can't be written to by strangers. Either person can block the other, and
- * then nothing new reaches them.
+ * Messages between two people who follow each other. Following is one tap, but writing takes
+ * both: you follow, they follow back, and only then can either of you write. If one of you stops
+ * following, the conversation stays to read and nothing new can be sent. Either person can block
+ * the other, and then nothing new reaches them.
  */
 
 const PAGE = 50;
@@ -21,8 +20,8 @@ const PAGE = 50;
 type Outcome<T> = { ok: true; value: T } | { ok: false; error: string; status: number };
 const fail = (error: string, status: number): { ok: false; error: string; status: number } => ({ ok: false, error, status });
 
-type Person = { _id: Types.ObjectId; handle?: string | null; name: string; hue?: number; isPublic?: boolean };
-const PERSON = "handle name hue isPublic";
+type Person = { _id: Types.ObjectId; handle?: string | null; name: string; hue?: number };
+const PERSON = "handle name hue";
 
 const personOf = (u: Person) => ({ handle: u.handle ?? "", name: u.name, hue: hueOf(u) });
 const firstName = (name: string) => name.split(/\s+/)[0] || name;
@@ -37,21 +36,33 @@ async function personByHandle(raw: string): Promise<Person | null> {
   return User.findOne({ handle }).select(PERSON).lean<Person>();
 }
 
+/** Who follows whom between the two of them. */
+async function follows(me: Person, them: Person): Promise<{ isFollowing: boolean; followsYou: boolean }> {
+  const [out, back] = await Promise.all([
+    Follow.exists({ followerId: me._id, followeeId: them._id }),
+    Follow.exists({ followerId: them._id, followeeId: me._id }),
+  ]);
+  return { isFollowing: Boolean(out), followsYou: Boolean(back) };
+}
+
 /** Why the viewer can't write to them right now, or null when they can. */
-async function closedReason(me: Person, them: Person, convo: Pick<IConversation, "blockedBy"> | null): Promise<string | null> {
+async function closedReason(
+  me: Person,
+  them: Person,
+  convo: Pick<IConversation, "blockedBy"> | null,
+  link?: { isFollowing: boolean; followsYou: boolean }
+): Promise<string | null> {
   if (!me.handle) return NEEDS_HANDLE;
   if (String(me._id) === String(them._id)) return "That’s you.";
+  const first = firstName(them.name);
   const blockedBy = (convo?.blockedBy ?? []).map(String);
-  if (blockedBy.includes(String(me._id))) return `You blocked ${firstName(them.name)}. Unblock them to write.`;
-  if (blockedBy.includes(String(them._id))) return `${firstName(them.name)} isn’t taking messages from you.`;
-  if (them.isPublic) return null;
-  // A private profile hears only from people it follows, or about a page it put its name on
-  // in the gallery: that's asking to be written to.
-  const [follows, credited] = await Promise.all([
-    Follow.exists({ followerId: them._id, followeeId: me._id }),
-    Template.exists({ userId: them._id, isPublished: true, credit: true }),
-  ]);
-  return follows || credited ? null : `${firstName(them.name)}’s profile is private, so only people they follow can write to them.`;
+  if (blockedBy.includes(String(me._id))) return `You blocked ${first}. Unblock them to write.`;
+  if (blockedBy.includes(String(them._id))) return `${first} isn’t taking messages from you.`;
+  const { isFollowing, followsYou } = link ?? (await follows(me, them));
+  if (isFollowing && followsYou) return null;
+  if (isFollowing) return `You can write once ${first} follows you back.`;
+  if (followsYou) return `${first} follows you. Follow back and you can write to each other.`;
+  return `People who follow each other can write. Follow ${first}, and once they follow back you can.`;
 }
 
 /** Everyone the viewer is writing with, the latest first. */
@@ -109,12 +120,14 @@ export async function openConversation(me: string, handle: string, { before, aft
     messages = (after ? page : page.reverse()).map((m) => toMessage(m, me));
     await Conversation.updateOne({ _id: convo._id }, { $set: { [`unread.${me}`]: 0 } });
   }
+  const link = await follows(mine, them);
   return {
     person: personOf(them),
     messages,
     more,
-    closed: await closedReason(mine, them, convo),
+    closed: await closedReason(mine, them, convo, link),
     blocked: Boolean(convo?.blockedBy?.some((b) => String(b) === me)),
+    ...link,
   };
 }
 

@@ -84,7 +84,7 @@ export function PublishToggle({
       {isPublished ? (
         <button type="button" role="switch" aria-checked={named} onClick={toggleCredit} disabled={loading} className="chip chip-sm basis-full justify-start whitespace-normal py-1.5 text-left sm:basis-auto">
           <Icon name={named ? "check" : "user"} className="h-4 w-4" />
-          {named ? "Your name is on it: people can write to ask how it’s going" : "Put my name on it, so people can write to ask about it"}
+          {named ? "Your name is on it: people can open your profile from it" : "Put my name on it, so people can find your profile from it"}
         </button>
       ) : null}
     </div>

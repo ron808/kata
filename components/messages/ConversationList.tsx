@@ -39,7 +39,7 @@ export function ConversationList({ initial, active = null }: { initial: Conversa
       <div className="card p-6">
         <p className="font-display text-display-s">No messages yet</p>
         <p className="mt-2 text-ink/75">
-          Write to someone from their profile, or ask the person behind a page in the gallery how it’s working for them.
+          Once you and someone follow each other, you can write from their profile. Follow a friend, and when they follow back, say hello.
         </p>
         <Link href="/people" className="link mt-4 inline-flex min-h-11 items-center font-semibold">
           Find people

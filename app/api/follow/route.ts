@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/db/mongoose";
 import { handleError, jsonError, requireUser } from "@/lib/api";
 import { checkLimit, limiters } from "@/lib/ratelimit/upstash";
-import { follow, unfollow } from "@/lib/social/actions";
-import { FollowSchema, parseBody } from "@/lib/social/schemas";
+import { follow, setClose, unfollow } from "@/lib/social/actions";
+import { CloseSchema, FollowSchema, parseBody } from "@/lib/social/schemas";
 
 async function change(request: Request, how: typeof follow) {
   try {
@@ -23,3 +23,17 @@ async function change(request: Request, how: typeof follow) {
 
 export const POST = (request: Request) => change(request, follow);
 export const DELETE = (request: Request) => change(request, unfollow);
+
+/** Puts someone you follow in your people, or takes them out. */
+export async function PATCH(request: Request) {
+  try {
+    const { session, response } = await requireUser();
+    if (response) return response;
+    const { handle, close } = await parseBody(request, CloseSchema);
+    await connectDB();
+    const result = await setClose(session.user.id, handle, close);
+    return result.ok ? NextResponse.json({ person: result.value }) : jsonError(result.error, result.status);
+  } catch (err) {
+    return handleError(err);
+  }
+}

@@ -10,7 +10,7 @@ import { PasswordField } from "./PasswordField";
 type FieldErrors = Partial<Record<"name" | "email" | "password", string>>;
 
 /** Name, email and password. What you do is asked once, by Kata, in onboarding. */
-export function RegisterForm() {
+export function RegisterForm({ follow = null }: { follow?: string | null }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -63,7 +63,7 @@ export function RegisterForm() {
         setLoading(false);
         return;
       }
-      router.push("/onboarding");
+      router.push(follow ? `/onboarding?follow=${follow}` : "/onboarding");
     } catch {
       setFormError("Something went wrong. Try again in a moment.");
       setLoading(false);

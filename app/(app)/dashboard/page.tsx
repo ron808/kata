@@ -10,7 +10,7 @@ import { loadCompanion, type CompanionState } from "@/lib/companion/load";
 import { namesFor } from "@/lib/companion/naming";
 import { dayToDate, localDay, validTimeZone } from "@/lib/companion/time";
 import { openMissions, toMissionT } from "@/lib/missions";
-import { loadFeed, loadPeople } from "@/lib/social/load";
+import { loadFeed } from "@/lib/social/load";
 import { workingOn, type WorkingOnT } from "@/lib/social/working";
 import { buildAlmanac } from "@/lib/utils/almanac";
 import { streakFromDates } from "@/lib/utils/streaks";
@@ -26,7 +26,7 @@ import { PeopleRow } from "@/components/home/PeopleRow";
 import { PeopleProvider } from "@/components/people/viewer";
 import { TodayQuestions } from "@/components/home/TodayQuestions";
 import { WorkingOn } from "@/components/home/WorkingOn";
-import type { DigestSummary, MissionT, MomentT, PersonT } from "@/lib/types";
+import type { DigestSummary, MissionT, MomentT } from "@/lib/types";
 
 const CHECK_IN_LINE = {
   morning: "Checks in every morning",
@@ -47,7 +47,6 @@ interface HomeData {
   todayEntryId: string | null;
   letter: DigestSummary | null;
   moments: MomentT[];
-  suggested: PersonT[];
   working: WorkingOnT[];
   words: Map<string, number>;
   stats: { streak: number; longestStreak: number; totalEntries: number; totalWords: number; averageWords: number };
@@ -60,12 +59,11 @@ async function loadHome(userId: string): Promise<HomeData | null> {
     if (!user) return null;
     const tz = validTimeZone(user.timezone);
     if (user.focusMissionId) return { focus: true } as HomeData;
-    const [companion, entries, letter, feed, people, working, missions] = await Promise.all([
+    const [companion, entries, letter, feed, working, missions] = await Promise.all([
       loadCompanion(userId),
       Entry.find({ userId }).select("date wordCount").sort({ date: -1 }).limit(366).lean(),
       Digest.findOne({ userId, isRead: false }).sort({ createdAt: -1 }).lean(),
-      loadFeed(userId, { scope: "following" }),
-      loadPeople(userId, {}),
+      loadFeed(userId, {}),
       workingOn(userId),
       openMissions({ userId }),
     ]);
@@ -98,7 +96,6 @@ async function loadHome(userId: string): Promise<HomeData | null> {
           }
         : null,
       moments: feed.moments.filter((m) => !m.isMine).slice(0, 3),
-      suggested: people.suggested.slice(0, 4),
       working,
       words: new Map(entries.map((e) => [isoDay(e.date), e.wordCount ?? 0])),
       stats: {
@@ -199,7 +196,7 @@ export default async function HomePage() {
           <div className="mt-6">
             {/* Reacting or replying here asks for a handle first if there isn't one. */}
             <PeopleProvider handle={data.handle}>
-              <PeopleRow moments={data.moments} suggested={data.suggested} />
+              <PeopleRow moments={data.moments} />
             </PeopleProvider>
           </div>
 

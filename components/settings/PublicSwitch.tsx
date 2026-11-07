@@ -29,7 +29,7 @@ export function PublicSwitch({
           </p>
           <p id={`${id}-desc`} className="mt-1 text-sm text-ink/75">
             {on
-              ? "Anyone on Kata can find you by name and message you, and your public moments can show up in Discover."
+              ? "Anyone on Kata can find you by name, and you can come up in their suggestions."
               : "Only someone who types your whole handle can find you."}
           </p>
         </div>

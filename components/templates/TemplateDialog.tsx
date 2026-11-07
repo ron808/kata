@@ -154,7 +154,7 @@ function Sheet({
                 ))}
               </ul>
             ) : null}
-            {author ? <AskTheMaker author={author} page={page.name} /> : null}
+            {author ? <MadeBy author={author} /> : null}
           </div>
           <button type="button" onClick={onClose} disabled={Boolean(mine.busy)} aria-label="Close" className="chip !h-11 !w-11 shrink-0 !px-0">
             <Icon name="close" className="h-5 w-5" />
@@ -219,19 +219,13 @@ function Sheet({
   );
 }
 
-/** The person who made the page put their name on it: write to them about how it's going. */
-function AskTheMaker({ author, page }: { author: PageAuthor; page: string }) {
-  const first = author.name.split(/\s+/)[0] || author.name;
-  const draft = `Hi ${first}, I found your page “${page}” in the gallery. How has it worked for you?`;
+/** The person who made the page put their name on it: their profile is a tap away, to follow them. */
+function MadeBy({ author }: { author: PageAuthor }) {
   return (
     <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
       <Link href={`/u/${author.handle}`} className="inline-flex min-h-11 items-center gap-2 text-[0.9375rem] font-semibold text-deep underline-offset-4 hover:underline">
         <Avatar name={author.name} hue={author.hue} size={28} />
         By {author.name}
-      </Link>
-      <Link href={`/messages/${author.handle}?draft=${encodeURIComponent(draft)}`} className="chip chip-sm">
-        <Icon name="chat" className="h-4 w-4" />
-        Ask {first} about it
       </Link>
     </div>
   );

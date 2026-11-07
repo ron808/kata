@@ -66,6 +66,19 @@ export async function unfollow(me: string, handle: string): Promise<Outcome<Pers
   return person ? { ok: true, value: person } : fail("Not found", 404);
 }
 
+/** Puts someone they follow in their people, or takes them out. Only people they follow can be in it. */
+export async function setClose(me: string, handle: string, close: boolean): Promise<Outcome<PersonT>> {
+  const target = await personByHandle(me, handle);
+  if (!target.ok) return target;
+  const res = await Follow.updateOne(
+    { followerId: me, followeeId: target.value },
+    close ? { $set: { close: true } } : { $unset: { close: 1 } }
+  );
+  if (!res.matchedCount) return fail("Follow them first.", 409);
+  const person = await personFor(me, target.value);
+  return person ? { ok: true, value: person } : fail("Not found", 404);
+}
+
 export interface MomentInput {
   text: string;
   kind: MomentKind;

@@ -1,4 +1,5 @@
 import type { QueryFilter } from "mongoose";
+import { Follow } from "@/lib/db/models/Follow";
 import { User, type IUser } from "@/lib/db/models/User";
 import { roleKeyOf } from "@/lib/questions/daily";
 import { ROLE_PRESETS } from "@/lib/roles";
@@ -81,6 +82,17 @@ export async function discoverPeople(
     .limit(SEARCH_LIMIT)
     .lean();
   return peopleFor(viewerId, users);
+}
+
+const FOLLOWING_MAX = 200;
+
+/** Everyone the viewer follows, their people first, then the latest followed: for choosing their people. */
+export async function peopleYouFollow(viewerId: string): Promise<PersonT[]> {
+  const follows = await Follow.find({ followerId: viewerId }).sort({ close: -1, createdAt: -1 }).limit(FOLLOWING_MAX).select("followeeId").lean();
+  const ids = follows.map((f) => f.followeeId);
+  const users = await User.find({ _id: { $in: ids } }).select(PERSON_FIELDS).lean();
+  const order = new Map(ids.map((id, i) => [String(id), i]));
+  return peopleFor(viewerId, users.sort((a, b) => (order.get(String(a._id)) ?? 0) - (order.get(String(b._id)) ?? 0)));
 }
 
 /**

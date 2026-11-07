@@ -272,6 +272,8 @@ export interface PersonT {
   /** Relative to the viewer. */
   isFollowing: boolean;
   followsYou: boolean;
+  /** One of the viewer's people, the few they picked to see every time. */
+  isClose: boolean;
   isMe: boolean;
 }
 
@@ -326,6 +328,9 @@ export interface ThreadOpenT {
   /** Why they can't write, when they can't. */
   closed: string | null;
   blocked: boolean;
+  /** Who follows whom, so a closed conversation can offer the follow that opens it. */
+  isFollowing: boolean;
+  followsYou: boolean;
 }
 
 export interface NotificationT {

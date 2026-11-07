@@ -1,10 +1,10 @@
 // The /people view as it lives in the URL, shared by the server page and the client:
-//   /people                         Following
-//   /people?tab=discover&tag=books  Discover, moments tagged #books
+//   /people                         Your people
+//   /people?tag=books               Your people's moments tagged #books
 //   /people?tab=find&q=mi&role=Designer&tag=typography
-// `tag` is a topic: moments with that tag on the feeds, people with that interest on Find people.
+// `tag` is a topic: moments with that tag on the feed, people with that interest on Find people.
 
-export type PeopleTab = "following" | "discover" | "find";
+export type PeopleTab = "people" | "find";
 
 export interface PeopleView {
   tab: PeopleTab;
@@ -29,8 +29,8 @@ export function normalizeTag(raw: string): string {
 }
 
 export function parseView(raw: RawParams): PeopleView {
-  const t = read(raw, "tab");
-  const tab: PeopleTab = t === "discover" || t === "find" ? t : "following";
+  // Old links to Discover or Following land on your people.
+  const tab: PeopleTab = read(raw, "tab") === "find" ? "find" : "people";
   return {
     tab,
     tag: normalizeTag(read(raw, "tag")),
@@ -41,7 +41,7 @@ export function parseView(raw: RawParams): PeopleView {
 
 export function viewHref(view: PeopleView): string {
   const p = new URLSearchParams();
-  if (view.tab !== "following") p.set("tab", view.tab);
+  if (view.tab !== "people") p.set("tab", view.tab);
   if (view.tab === "find" && view.q) p.set("q", view.q);
   if (view.tab === "find" && view.role) p.set("role", view.role);
   if (view.tag) p.set("tag", view.tag);
@@ -57,4 +57,4 @@ export function viewKey(view: PeopleView): string {
 }
 
 /** Where a tag on a moment leads when there's no feed on the page to filter in place. */
-export const tagHref = (tag: string) => viewHref({ tab: "discover", tag, q: "", role: "" });
+export const tagHref = (tag: string) => viewHref({ tab: "people", tag, q: "", role: "" });

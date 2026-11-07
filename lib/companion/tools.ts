@@ -24,6 +24,7 @@ import { listItems } from "@/lib/missions/said";
 import { checkLimit, limiters } from "@/lib/ratelimit/upstash";
 import { follow, replyTo, shareMoment, unfollow } from "@/lib/social/actions";
 import { sendMessage } from "@/lib/social/messages";
+import { areFriends } from "@/lib/social/visibility";
 import { NEEDS_PROFILE, handleOf, normalizeHandle } from "@/lib/social/handles";
 import type { EntryField, FieldType, FieldValue, ReplyT } from "@/lib/types";
 import type { EngineCtx } from "./engine";
@@ -276,7 +277,7 @@ const TOOLS: Record<string, ChatCompletionTool> = {
     {
       page: {
         type: "string",
-        enum: ["home", "today", "pages", "letters", "breakdowns", "missions", "focus", "threads", "memories", "people", "discover", "find_people", "notifications", "gallery", "builder", "settings", "profile"],
+        enum: ["home", "today", "pages", "letters", "breakdowns", "missions", "focus", "threads", "memories", "people", "find_people", "notifications", "gallery", "builder", "settings", "profile"],
       },
       handle: { type: "string", description: "For a profile: whose. Leave out for their own." },
     },
@@ -347,7 +348,7 @@ const TOOLS: Record<string, ChatCompletionTool> = {
   ),
   draft_message: fn(
     "draft_message",
-    "Draft a private message from them to someone by @handle, in their voice, for them to check and send. Nothing is sent until they tap it.",
+    "Draft a private message from them to someone by @handle who follows them back (only people who follow each other can write), in their voice, for them to check and send. Nothing is sent until they tap it.",
     {
       to: { type: "string", description: "@handle" },
       text: { type: "string", description: "Up to 600 characters. Claim nothing about them you don't know: leave a blank like [day]." },
@@ -957,14 +958,14 @@ async function updateProfile(turn: Turn, args: Args): Promise<string> {
   if (args.public === false) {
     await User.updateOne({ _id: turn.ctx.userId }, { $set: { isPublic: false } });
     turn.actions.push({ type: "refresh" });
-    done.push("private: out of Discover");
+    done.push("unlisted: out of search");
   } else if (args.public === true) {
     const handle = await handleOf(turn.ctx.userId);
     if (!handle && !done.length && !drafted.length) throw new Unable("Going public needs a handle first. Pick one in Settings.");
     if (handle) {
       turn.choices.push({
         label: "Make it public",
-        detail: "Anyone on Kata could find you by name and message you, and see what you share in Discover. They never see your pages.",
+        detail: "Anyone on Kata could find you by name and see what you share on your profile. They never see your pages.",
         kind: "settings",
         tool: "go_public",
         args: {},
@@ -1095,6 +1096,8 @@ async function draftMessage(turn: Turn, args: Args): Promise<string> {
   if (!them?.handle) throw new Unable(`There's nobody called @${handle}.`);
   if (String(them._id) === turn.ctx.userId) throw new Unable("That's them.");
   const first = them.name.split(/\s+/)[0] || them.name;
+  // Only friends can write, so a draft nobody could send isn't offered.
+  if (!(await areFriends(turn.ctx.userId, String(them._id)))) throw new Unable(`You and ${first} need to follow each other before either of you can write.`);
   turn.choices.push({
     label: `Send to ${first}`,
     detail: text,
@@ -1591,7 +1594,6 @@ const PAGES: Record<string, string> = {
   threads: "/threads",
   memories: "/threads#memories",
   people: "/people",
-  discover: "/people?tab=discover",
   find_people: "/people?tab=find",
   notifications: "/notifications",
   gallery: "/templates",
@@ -1645,7 +1647,6 @@ const PLACES: Record<string, [page: string, name: string]> = {
   memories: ["memories", "what I remember"],
   people: ["people", "People"],
   feed: ["people", "People"],
-  discover: ["discover", "Discover"],
   "find people": ["find_people", "Find people"],
   notifications: ["notifications", "your notifications"],
   gallery: ["gallery", "the gallery"],
@@ -2044,7 +2045,7 @@ async function goPublic(turn: Turn): Promise<string> {
   if (!handle) throw new Unable("Going public needs a handle first. Pick one in Settings.");
   await User.updateOne({ _id: turn.ctx.userId }, { $set: { isPublic: true } });
   turn.actions.push({ type: "refresh" });
-  receipt(turn, "settings", "Your profile is public", "Anyone on Kata can find you by name and message you. They never see your pages.", `/u/${handle}`);
+  receipt(turn, "settings", "Your profile is public", "Anyone on Kata can find you by name. They never see your pages.", `/u/${handle}`);
   return "Public.";
 }
 

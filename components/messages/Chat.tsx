@@ -6,6 +6,7 @@ import { Avatar } from "@/components/shared/Avatar";
 import { Button } from "@/components/shared/Button";
 import { Icon } from "@/components/shared/Icon";
 import { useToast } from "@/components/shared/Toast";
+import { FollowButton } from "@/components/people/FollowButton";
 import type { DirectMessageT, ThreadOpenT } from "@/lib/types";
 
 const MAX = 2000;
@@ -35,8 +36,9 @@ const clock = (iso: string, tz: string) => new Date(iso).toLocaleTimeString("en-
 
 /**
  * One conversation: their messages in their hue, yours in sun, a box to write in, and new
- * messages as they arrive. If you can't write (blocked, a private profile, no handle yet),
- * the box says why instead.
+ * messages as they arrive. Only people who follow each other can write: otherwise (or blocked,
+ * or no handle yet) the box says why instead, with the follow that would open it. It opens by
+ * itself when they follow back.
  */
 export function Chat({ initial, draft = "", tz }: { initial: ThreadOpenT; draft?: string; tz: string }) {
   const { toast } = useToast();
@@ -47,6 +49,7 @@ export function Chat({ initial, draft = "", tz }: { initial: ThreadOpenT; draft?
   const [more, setMore] = useState(initial.more);
   const [closed, setClosed] = useState(initial.closed);
   const [blocked, setBlocked] = useState(initial.blocked);
+  const [link, setLink] = useState({ isFollowing: initial.isFollowing, followsYou: initial.followsYou });
   const [text, setText] = useState(draft.slice(0, MAX));
   const [sending, setSending] = useState(false);
   const [arming, setArming] = useState(false);
@@ -85,6 +88,7 @@ export function Chat({ initial, draft = "", tz }: { initial: ThreadOpenT; draft?
       if (data.messages.length) setMessages((ms) => merge(ms, data.messages));
       setClosed(data.closed);
       setBlocked(data.blocked);
+      setLink({ isFollowing: data.isFollowing, followsYou: data.followsYou });
     };
     const timer = window.setInterval(tick, POLL);
     return () => {
@@ -273,6 +277,16 @@ export function Chat({ initial, draft = "", tz }: { initial: ThreadOpenT; draft?
             <Link href="/settings#profile" className="link inline-flex min-h-11 items-center font-semibold">
               Choose a handle
             </Link>
+          ) : !link.isFollowing ? (
+            <FollowButton
+              size="sm"
+              person={{ handle: person.handle, name: person.name, isMe: false, ...link }}
+              onChange={(next) => {
+                setLink({ isFollowing: next.isFollowing, followsYou: next.followsYou });
+                if (next.isFollowing && next.followsYou) setClosed(null);
+                else if (next.isFollowing) setClosed(`You can write once ${first} follows you back.`);
+              }}
+            />
           ) : null}
         </div>
       ) : (

@@ -2,8 +2,9 @@
 
 /**
  * ProfileHeader — the top of /u/[handle]: a big avatar sticker in their hue, name, @handle,
- * role, bio, follower and following counts, and Follow and Message (or Edit profile on your own).
- * Props: person: PersonT; unlisted? (your own profile isn't listed in Discover or Find people).
+ * role, bio, follower and following counts, and Follow, the star that puts them in your people,
+ * and Message once you follow each other (or Edit and Share on your own).
+ * Props: person: PersonT; unlisted? (your own profile only shows up for its whole handle).
  */
 
 import Link from "next/link";
@@ -14,6 +15,8 @@ import { Icon } from "@/components/shared/Icon";
 import type { PersonT } from "@/lib/types";
 import { FollowButton } from "./FollowButton";
 import { hue8 } from "./labels";
+import { ShareProfile } from "./ShareProfile";
+import { YourPeopleStar } from "./YourPeople";
 
 export function ProfileHeader({ person, unlisted = false }: { person: PersonT; unlisted?: boolean }) {
   const [p, setP] = useState(person);
@@ -23,6 +26,10 @@ export function ProfileHeader({ person, unlisted = false }: { person: PersonT; u
     setP(person);
   }
   const role = p.role && p.role !== "Custom" ? p.role : null;
+  const friends = p.isFollowing && p.followsYou;
+  const first = p.name.trim().split(/\s+/)[0] || p.name;
+  // Writing takes a follow both ways: say what's missing, instead of a button that can't work.
+  const toWrite = friends ? null : p.isFollowing ? `You can message once ${first} follows you back.` : p.followsYou ? `${first} follows you. Follow back to message each other.` : null;
 
   return (
     <section aria-labelledby="profile-name" data-hue={hue8(p.hue)} className="card bg-tint p-5 sm:p-8">
@@ -47,20 +54,33 @@ export function ProfileHeader({ person, unlisted = false }: { person: PersonT; u
               </p>
             </div>
             {p.isMe ? (
-              <Link href="/settings#profile" className={buttonClass({ variant: "secondary" })}>
-                <Icon name="pen" className="h-4 w-4" />
-                Edit profile
-              </Link>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <ShareProfile handle={p.handle} name={p.name} variant="primary" />
+                <Link href="/settings#profile" className={buttonClass({ variant: "secondary" })}>
+                  <Icon name="pen" className="h-4 w-4" />
+                  Edit profile
+                </Link>
+              </div>
             ) : (
               <div className="flex flex-wrap items-center gap-2.5">
                 <FollowButton person={p} onChange={setP} />
-                <Link href={`/messages/${p.handle}`} className={buttonClass({ variant: "secondary" })}>
-                  <Icon name="chat" className="h-4 w-4" />
-                  Message
-                </Link>
+                <YourPeopleStar person={p} onChange={setP} />
+                {friends ? (
+                  <Link href={`/messages/${p.handle}`} className={buttonClass({ variant: "secondary" })}>
+                    <Icon name="chat" className="h-4 w-4" />
+                    Message
+                  </Link>
+                ) : null}
               </div>
             )}
           </div>
+
+          {toWrite ? (
+            <p className="mt-3 flex items-center gap-2 text-[0.875rem] text-ink/75">
+              <Icon name="chat" className="h-4 w-4 shrink-0" />
+              {toWrite}
+            </p>
+          ) : null}
 
           {p.bio ? (
             <p className="mt-4 max-w-[40rem] text-lede">{p.bio}</p>
@@ -91,8 +111,7 @@ export function ProfileHeader({ person, unlisted = false }: { person: PersonT; u
             <p className="mt-5 flex max-w-[40rem] gap-2 text-[0.875rem] text-ink/75">
               <Icon name="lock" className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
-                Your profile is unlisted: only someone who types your whole handle can find you, and your moments stay out of
-                Discover.{" "}
+                Your profile is unlisted: only someone who types your whole handle, or opens your link, can find you.{" "}
                 <Link href="/settings#profile" className="link font-semibold text-ink">
                   List it in settings
                 </Link>

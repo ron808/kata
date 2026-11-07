@@ -61,6 +61,8 @@ export async function friendsAmong(viewerId: string, ids: Types.ObjectId[]): Pro
 export interface Relation {
   isFollowing: boolean;
   followsYou: boolean;
+  /** One of the viewer's people. */
+  isClose: boolean;
   isMe: boolean;
 }
 
@@ -71,15 +73,26 @@ export async function relationsTo(
 ): Promise<(id: Types.ObjectId) => Relation> {
   const [following, followers] = ids.length
     ? await Promise.all([
-        Follow.distinct("followeeId", { followerId: viewerId, followeeId: { $in: ids } }),
+        Follow.find({ followerId: viewerId, followeeId: { $in: ids } }).select("followeeId close").lean(),
         Follow.distinct("followerId", { followerId: { $in: ids }, followeeId: viewerId }),
       ])
     : [[], []];
-  const out = new Set(following.map(String));
+  const out = new Map(following.map((f) => [String(f.followeeId), Boolean(f.close)]));
   const back = new Set(followers.map(String));
   return (id) => ({
     isFollowing: out.has(String(id)),
     followsYou: back.has(String(id)),
+    isClose: out.get(String(id)) === true,
     isMe: String(id) === viewerId,
   });
+}
+
+/**
+ * The viewer's people: the ones they picked, or everyone they follow until they pick any. Their
+ * People feed and home show these; everyone else is found by name.
+ */
+export async function yourPeople(viewerId: string): Promise<{ ids: Types.ObjectId[]; chosen: boolean }> {
+  const follows = await Follow.find({ followerId: viewerId }).select("followeeId close").lean();
+  const close = follows.filter((f) => f.close).map((f) => f.followeeId);
+  return close.length ? { ids: close, chosen: true } : { ids: follows.map((f) => f.followeeId), chosen: false };
 }

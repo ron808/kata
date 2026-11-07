@@ -18,7 +18,7 @@ export interface IUser {
   /** Public @name. Null until the writer claims one. */
   handle: string | null;
   bio: string;
-  /** Listed in Discover, and public moments can appear there. Pages are never public. */
+  /** Listed: found by name and suggested to others. Unlisted, only a whole handle or a shared link finds them. Pages are never public. */
   isPublic: boolean;
   /** Topics the writer cares about; they steer Kata's questions. */
   interests: string[];

@@ -54,6 +54,7 @@ export function toPerson(user: Named<PersonDoc>, rel: Relation): PersonT {
     followingCount: user.followingCount ?? 0,
     isFollowing: rel.isFollowing,
     followsYou: rel.followsYou,
+    isClose: rel.isClose,
     isMe: rel.isMe,
   };
 }
@@ -81,6 +82,7 @@ export function toProfile(
     followingCount: user.followingCount ?? 0,
     isFollowing: false,
     followsYou: false,
+    isClose: false,
     isMe: true,
     isPublic: user.isPublic ?? false,
     interests: user.interests ?? [],

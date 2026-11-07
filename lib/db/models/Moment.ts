@@ -7,7 +7,7 @@ import mongoose, { Schema, type Model } from "mongoose";
 export const MOMENT_KINDS = ["win", "ship", "thought", "question", "milestone", "page"] as const;
 export type MomentKind = (typeof MOMENT_KINDS)[number];
 
-/** public: anyone signed in (and Discover, if the author is public). friends: mutual follows only. */
+/** public: anyone signed in, on the author's profile and in their followers' feeds. friends: mutual follows only. */
 export const VISIBILITIES = ["public", "friends"] as const;
 export type Visibility = (typeof VISIBILITIES)[number];
 

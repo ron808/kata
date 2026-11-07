@@ -48,8 +48,10 @@ export const PeopleQuerySchema = z.object({
 
 export const FollowSchema = z.object({ handle: z.string().min(1).max(64) });
 
+/** In their people, or out. */
+export const CloseSchema = z.object({ handle: z.string().min(1).max(64), close: z.boolean() });
+
 export const FeedQuerySchema = z.object({
-  scope: z.enum(["following", "discover"]).default("following"),
   tag: optionalTag,
   before: optionalText(400),
 });

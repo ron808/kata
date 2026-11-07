@@ -11,10 +11,10 @@ export async function GET(request: Request) {
     const { session, response } = await requireUser();
     if (response) return response;
 
-    const { scope, tag, before } = parseQuery(request, FeedQuerySchema);
-    if (before && !isFeedCursor(scope, before)) return jsonError("Invalid cursor.", 400);
+    const { tag, before } = parseQuery(request, FeedQuerySchema);
+    if (before && !isFeedCursor(before)) return jsonError("Invalid cursor.", 400);
     await connectDB();
-    return NextResponse.json(await feed(session.user.id, { scope, tag, before }));
+    return NextResponse.json(await feed(session.user.id, { tag, before }));
   } catch (err) {
     return handleError(err);
   }

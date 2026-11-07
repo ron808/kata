@@ -70,6 +70,7 @@ const reduceMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 export function OnboardingFlow({
+  after = "/dashboard",
   firstName,
   currentHandle,
   suggestedHandle,
@@ -78,6 +79,8 @@ export function OnboardingFlow({
   today,
   hasPage,
 }: {
+  /** Where they go once it's done: home, or the profile they came from to follow. */
+  after?: string;
   firstName: string;
   currentHandle: string | null;
   suggestedHandle: string | null;
@@ -253,7 +256,7 @@ export function OnboardingFlow({
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(data.error ?? "Something went wrong on my side.");
       }
-      router.push("/dashboard");
+      router.push(after);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Something went wrong on my side.");
       setSaving(false);

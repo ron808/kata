@@ -1,13 +1,15 @@
 "use client";
 
 /**
- * PeopleHome — everything on /people under its header: the composer, the Following / Discover /
- * Find people switch and what it shows, and (from lg) a side column with you, people to follow
- * and this month's topics. The view lives in the URL (./view), so back, forward and reload all
- * land where you were; results are cached per view, so switching back is instant.
+ * PeopleHome — everything on /people under its header: the composer, the Your people / Find
+ * people switch and what it shows, and (from xl) a side column with you. Your people are the ones
+ * you picked, or everyone you follow until you pick; nobody else's moments come here, and
+ * anyone else is found by name. The view lives in the URL (./view), so back, forward and reload
+ * all land where you were; results are cached per view, so switching back is instant.
  *
- * Props come from app/(app)/people/page.tsx: me, initial (the first view's data), suggested,
- * facets (roles, interests and topics that exist).
+ * Props come from app/(app)/people/page.tsx: me, initial (the first view's data), suggested (for
+ * Find people), following (everyone you follow, your people marked), facets (roles and interests
+ * that exist).
  */
 
 import Link from "next/link";
@@ -23,7 +25,9 @@ import { HandleClaim } from "./HandleClaim";
 import { hue8, plural } from "./labels";
 import { MomentCard } from "./MomentCard";
 import { PersonCard } from "./PersonCard";
+import { ShareProfile } from "./ShareProfile";
 import { PeopleProvider, useViewerHandle } from "./viewer";
+import { YourPeopleBar } from "./YourPeople";
 import { parseView, viewHref, viewKey, type PeopleTab, type PeopleView } from "./view";
 
 export interface PeopleMe {
@@ -39,7 +43,6 @@ export interface PeopleMe {
 export interface PeopleFacets {
   roles: string[];
   interests: string[];
-  topics: string[];
 }
 
 export interface PeopleInitial {
@@ -59,15 +62,14 @@ type Rel = Pick<PersonT, "isFollowing" | "followsYou"> & { followerCount?: numbe
 type FollowEvent = Pick<PersonT, "handle" | "isFollowing" | "followsYou"> & { followerCount?: number };
 
 const TABS: { tab: PeopleTab; label: string; blurb: string }[] = [
-  { tab: "following", label: "Following", blurb: "You and the people you follow, newest first." },
-  { tab: "discover", label: "Discover", blurb: "Public moments from people you don’t follow yet, the liveliest first." },
-  { tab: "find", label: "Find people", blurb: "Everyone who lists themselves publicly." },
+  { tab: "people", label: "Your people", blurb: "You and your people, newest first." },
+  { tab: "find", label: "Find people", blurb: "Look anyone up by name, or their whole handle." },
 ];
 
-const EMPTY_VIEW: PeopleView = { tab: "following", tag: "", q: "", role: "" };
+const EMPTY_VIEW: PeopleView = { tab: "people", tag: "", q: "", role: "" };
 
 function feedQuery(view: PeopleView, before?: string) {
-  const p = new URLSearchParams({ scope: view.tab === "discover" ? "discover" : "following" });
+  const p = new URLSearchParams();
   if (view.tag) p.set("tag", view.tag);
   if (before) p.set("before", before);
   return p.toString();
@@ -86,7 +88,7 @@ const unique = (moments: MomentT[]) => {
   return moments.filter((m) => (seen.has(m._id) ? false : (seen.add(m._id), true)));
 };
 
-export function PeopleHome(props: { me: PeopleMe; initial: PeopleInitial; suggested: PersonT[]; facets: PeopleFacets }) {
+export function PeopleHome(props: { me: PeopleMe; initial: PeopleInitial; suggested: PersonT[]; following: PersonT[]; facets: PeopleFacets }) {
   return (
     <PeopleProvider handle={props.me.handle} suggested={props.me.suggestedHandle}>
       <PeopleBoard {...props} />
@@ -98,17 +100,20 @@ function PeopleBoard({
   me: meNow,
   initial,
   suggested: suggestedNow,
+  following: followingNow,
   facets,
 }: {
   me: PeopleMe;
   initial: PeopleInitial;
   suggested: PersonT[];
+  following: PersonT[];
   facets: PeopleFacets;
 }) {
   // A refresh (after claiming a handle) must not pull people out from under you: someone you
   // just followed from the suggestions stays put, and counts move by what happens here.
   const [me] = useState(meNow);
   const [suggested] = useState(suggestedNow);
+  const [following, setFollowing] = useState(followingNow);
   const params = useSearchParams();
   const search = params.toString();
   const view = useMemo(() => parseView(new URLSearchParams(search)), [search]);
@@ -204,12 +209,12 @@ function PeopleBoard({
       const out: Record<string, FeedEntry> = {};
       for (const [k, entry] of Object.entries(f)) {
         const [tab, tag] = k.split("|");
-        out[k] = tab === "following" && (!tag || m.tags.includes(tag)) ? { ...entry, moments: unique([m, ...entry.moments]) } : entry;
+        out[k] = tab === "people" && (!tag || m.tags.includes(tag)) ? { ...entry, moments: unique([m, ...entry.moments]) } : entry;
       }
       return out;
     });
     setFresh(m._id);
-    if (view.tab !== "following" || view.tag) go(EMPTY_VIEW);
+    if (view.tab !== "people" || view.tag) go(EMPTY_VIEW);
   }
 
   function onDeleted(id: string) {
@@ -222,7 +227,26 @@ function PeopleBoard({
       ...r,
       [p.handle]: { isFollowing: p.isFollowing, followsYou: p.followsYou, followerCount: p.followerCount, was: r[p.handle]?.was ?? !p.isFollowing },
     }));
-    setFeeds((f) => Object.fromEntries(Object.entries(f).map(([k, e]) => [k, k.startsWith("following|") ? { ...e, stale: true } : e])));
+    setFeeds((f) => Object.fromEntries(Object.entries(f).map(([k, e]) => [k, k.startsWith("people|") ? { ...e, stale: true } : e])));
+    // Following someone puts them among the people you can pick; unfollowing takes them out.
+    setFollowing((list) => {
+      const known = list.find((x) => x.handle === p.handle);
+      if (!p.isFollowing) return list.filter((x) => x.handle !== p.handle);
+      if (known) return list.map((x) => (x.handle === p.handle ? { ...x, ...p } : x));
+      const person = [...suggested, ...(finds[key] ?? [])].find((x) => x.handle === p.handle);
+      return person ? [{ ...person, ...p, isClose: false }, ...list] : list;
+    });
+  }
+
+  /** Someone was starred or unstarred: the feed shows different people now. */
+  function onPicked(p: PersonT) {
+    setFollowing((list) => list.map((x) => (x.handle === p.handle ? p : x)));
+  }
+
+  /** The chooser closed after a change: every feed reloads with the new people. */
+  function onPickedDone() {
+    setFeeds((f) => Object.fromEntries(Object.entries(f).map(([k, e]) => [k, { ...e, stale: true }])));
+    reload();
   }
 
   const withRel = useMemo(() => {
@@ -307,74 +331,38 @@ function PeopleBoard({
               onFollow={onFollow}
             />
           ) : (
-            <FeedPanel
-              view={view}
-              go={go}
-              entry={feeds[key]}
-              failed={Boolean(failed[key])}
-              retry={retry}
-              loadMore={loadMore}
-              reload={reload}
-              fresh={fresh}
-              suggested={people}
-              rels={rels}
-              onFollow={onFollow}
-              onDeleted={onDeleted}
-            />
+            <>
+              <YourPeopleBar
+                following={following}
+                handle={me.handle}
+                name={me.name}
+                onChange={onPicked}
+                onDone={onPickedDone}
+                onFind={() => go({ ...EMPTY_VIEW, tab: "find" })}
+              />
+              <div className="mt-6">
+                <FeedPanel
+                  view={view}
+                  go={go}
+                  entry={feeds[key]}
+                  failed={Boolean(failed[key])}
+                  retry={retry}
+                  loadMore={loadMore}
+                  reload={reload}
+                  fresh={fresh}
+                  following={following.length}
+                  me={me}
+                  onDeleted={onDeleted}
+                />
+              </div>
+            </>
           )}
         </div>
       </div>
 
-      <aside className="hidden min-w-0 xl:col-span-5 xl:block" aria-label="You and people to follow">
+      <aside className="hidden min-w-0 xl:col-span-5 xl:block" aria-label="You">
         <div className="space-y-6">
           <YouCard me={me} followingDelta={followingDelta} />
-          {people.length ? (
-            <section aria-labelledby="follow-heading" className="card p-5">
-              <div className="flex items-baseline justify-between gap-3">
-                <h2 id="follow-heading" className="font-display text-display-s">
-                  People to follow
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => go({ ...EMPTY_VIEW, tab: "find" })}
-                  className="link inline-flex min-h-11 shrink-0 items-center text-[0.875rem] font-semibold"
-                >
-                  Find more
-                </button>
-              </div>
-              <p className="text-[0.875rem] text-ink/65">Picked from your role and interests.</p>
-              <ul className="mt-2">
-                {people.slice(0, 5).map((p) => (
-                  <li key={p.handle} className="rule border-t-2 first:border-t-0">
-                    <PersonCard person={p} compact onChange={onFollow} />
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-          {facets.topics.length ? (
-            <section aria-labelledby="topics-heading" className="card p-5">
-              <h2 id="topics-heading" className="font-display text-display-s">
-                Topics
-              </h2>
-              <p className="mt-1 text-[0.875rem] text-ink/65">Tags on public moments this month.</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {facets.topics.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    aria-pressed={view.tab !== "find" && view.tag === t}
-                    onClick={() =>
-                      go({ ...EMPTY_VIEW, tab: view.tab === "find" ? "discover" : view.tab, tag: view.tab !== "find" && view.tag === t ? "" : t })
-                    }
-                    className="chip chip-sm"
-                  >
-                    #{t}
-                  </button>
-                ))}
-              </div>
-            </section>
-          ) : null}
         </div>
       </aside>
     </div>
@@ -410,14 +398,17 @@ function YouCard({ me, followingDelta }: { me: PeopleMe; followingDelta: number 
         ))}
       </dl>
       {handle ? (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4">
-          <Link href={`/u/${handle}`} className="link inline-flex min-h-11 items-center text-[0.9375rem] font-semibold">
-            Your profile
-          </Link>
-          <Link href="/settings#profile" className="inline-flex min-h-11 items-center text-[0.875rem] font-medium text-ink/75 hover:text-ink">
-            Edit profile
-          </Link>
-        </div>
+        <>
+          <ShareProfile handle={handle} name={me.name} className="mt-4 w-full" />
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4">
+            <Link href={`/u/${handle}`} className="link inline-flex min-h-11 items-center text-[0.9375rem] font-semibold">
+              Your profile
+            </Link>
+            <Link href="/settings#profile" className="inline-flex min-h-11 items-center text-[0.875rem] font-medium text-ink/75 hover:text-ink">
+              Edit profile
+            </Link>
+          </div>
+        </>
       ) : claiming ? (
         <HandleClaim
           className="mt-4"
@@ -461,9 +452,8 @@ function FeedPanel({
   loadMore,
   reload,
   fresh,
-  suggested,
-  rels,
-  onFollow,
+  following,
+  me,
   onDeleted,
 }: {
   view: PeopleView;
@@ -474,12 +464,11 @@ function FeedPanel({
   loadMore: () => void;
   reload: () => void;
   fresh: string | null;
-  suggested: PersonT[];
-  rels: Record<string, Rel>;
-  onFollow: (p: FollowEvent) => void;
+  /** How many people they follow. */
+  following: number;
+  me: PeopleMe;
   onDeleted: (id: string) => void;
 }) {
-  const discover = view.tab === "discover";
   const filter = view.tag ? (
     <div className="mb-5 flex flex-wrap items-center gap-2">
       <span className="text-[0.875rem] text-ink/70">Showing moments tagged</span>
@@ -519,33 +508,38 @@ function FeedPanel({
         {filter}
         {view.tag ? (
           <Empty
-            title={discover ? `No public moments tagged #${view.tag} this month.` : `Nothing tagged #${view.tag} from you or the people you follow.`}
+            title={`Nothing tagged #${view.tag} from you or your people.`}
             actions={
-              <>
-                <Button variant="secondary" onClick={() => go({ ...view, tag: "" })}>
-                  Clear the tag
-                </Button>
-                {discover ? null : (
-                  <Button variant="quiet" onClick={() => go({ ...view, tab: "discover" })}>
-                    Look in Discover
-                    <Icon name="arrow" className="h-4 w-4" />
-                  </Button>
-                )}
-              </>
-            }
-          />
-        ) : discover ? (
-          <Empty
-            title="Nothing new to discover right now."
-            body="Public moments from people you don’t follow show up here. You can also look people up by name."
-            actions={
-              <Button variant="secondary" onClick={() => go({ ...EMPTY_VIEW, tab: "find" })}>
-                Find people
+              <Button variant="secondary" onClick={() => go({ ...view, tag: "" })}>
+                Clear the tag
               </Button>
             }
           />
         ) : (
-          <FollowingEmpty suggested={suggested} entry={entry} go={go} reload={reload} onFollow={onFollow} />
+          <Empty
+            title={following ? "Nothing from your people yet." : "Your people’s moments land here."}
+            body={
+              following
+                ? "When they share a win, a ship or a question, it shows here, newest first."
+                : "Follow someone to see what they share. Look them up by name, or send them your profile."
+            }
+            actions={
+              entry.stale ? (
+                <Button variant="secondary" onClick={reload}>
+                  Show their moments
+                  <Icon name="arrow-down" className="h-4 w-4" />
+                </Button>
+              ) : following ? null : (
+                <>
+                  <Button variant="secondary" onClick={() => go({ ...EMPTY_VIEW, tab: "find" })}>
+                    <Icon name="search" className="h-4 w-4" />
+                    Find people
+                  </Button>
+                  {me.handle ? <ShareProfile handle={me.handle} name={me.name} variant="quiet" /> : null}
+                </>
+              )
+            }
+          />
         )}
       </>
     );
@@ -554,21 +548,13 @@ function FeedPanel({
   return (
     <>
       {filter}
-      <ol className="grid grid-cols-1 gap-5" aria-label={discover ? "Discover" : "Following"}>
-        {entry.moments.map((m, i) => (
+      <ol className="grid grid-cols-1 gap-5" aria-label="Your people">
+        {entry.moments.map((m) => (
           <li key={m._id} className={m._id === fresh ? "appear" : undefined}>
-            <MomentCard
-              moment={m}
-              followable={discover ? (rels[m.author.handle] ?? true) : false}
-              onFollow={onFollow}
-              onTag={(tag) => go({ ...view, tag })}
-              onDelete={onDeleted}
-            />
-            {!discover && !view.tag && i === 2 && suggested.length ? <SuggestedStrip people={suggested} onFollow={onFollow} /> : null}
+            <MomentCard moment={m} onTag={(tag) => go({ ...view, tag })} onDelete={onDeleted} />
           </li>
         ))}
       </ol>
-      {!discover && !view.tag && entry.moments.length < 3 && suggested.length ? <SuggestedStrip people={suggested} onFollow={onFollow} /> : null}
       <div className="mt-8 flex flex-col items-center gap-2">
         {entry.next ? (
           <Button variant="secondary" onClick={loadMore} disabled={entry.more === "loading"} className="min-w-40">
@@ -584,69 +570,6 @@ function FeedPanel({
         ) : null}
       </div>
     </>
-  );
-}
-
-function FollowingEmpty({
-  suggested,
-  entry,
-  go,
-  reload,
-  onFollow,
-}: {
-  suggested: PersonT[];
-  entry: FeedEntry;
-  go: (v: PeopleView) => void;
-  reload: () => void;
-  onFollow: (p: FollowEvent) => void;
-}) {
-  return (
-    <div>
-      <Empty
-        title="Your feed fills up as you follow people."
-        body={
-          suggested.length
-            ? "Their wins, ships and questions land here, newest first. A few people to start with:"
-            : "Their wins, ships and questions land here, newest first."
-        }
-        actions={
-          entry.stale ? (
-            <Button variant="secondary" onClick={reload}>
-              Show their moments
-              <Icon name="arrow-down" className="h-4 w-4" />
-            </Button>
-          ) : suggested.length ? null : (
-            <Button variant="secondary" onClick={() => go({ ...EMPTY_VIEW, tab: "find" })}>
-              Find people
-            </Button>
-          )
-        }
-      />
-      {suggested.length ? (
-        <ul className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2">
-          {suggested.map((p) => (
-            <li key={p.handle}>
-              <PersonCard person={p} onChange={onFollow} />
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
-
-function SuggestedStrip({ people, onFollow }: { people: PersonT[]; onFollow: (p: FollowEvent) => void }) {
-  return (
-    <section aria-label="People to follow" className="mt-5 xl:hidden">
-      <h2 className="font-display text-display-s">People to follow</h2>
-      <ul className="no-scrollbar -mx-margin mt-3 flex snap-x snap-mandatory gap-4 overflow-x-auto px-margin pb-3 pt-1">
-        {people.map((p) => (
-          <li key={p.handle} className="w-[min(18rem,78vw)] shrink-0 snap-start scroll-ml-margin">
-            <PersonCard person={p} onChange={onFollow} />
-          </li>
-        ))}
-      </ul>
-    </section>
   );
 }
 

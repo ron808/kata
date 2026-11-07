@@ -8,11 +8,10 @@
  *   <MomentCard moment={m} />
  *   <MomentCard moment={m} compact />
  *
- * Props: moment: MomentT; compact?: boolean. Optional: followable? (true, or what's known of
- * the viewer and the author, puts a FollowButton by the author's name, as on Discover) with
- * onFollow?(person); repliesOpen? + initialReplies? (open the thread at once, as on the moment's
- * own page); onTag?(tag) (filter in place instead of following the tag's link to Discover);
- * onDelete?(id) (after the viewer deletes their own moment; the card hides itself).
+ * Props: moment: MomentT; compact?: boolean. Optional: repliesOpen? + initialReplies? (open the
+ * thread at once, as on the moment's own page); onTag?(tag) (filter in place instead of
+ * following the tag's link to the People feed); onDelete?(id) (after the viewer deletes their
+ * own moment; the card hides itself).
  *
  * Someone else's moment has an "Ask Maru" button, which opens the companion about it (to
  * draft a reply, say), and every card is marked with its id so the companion can read the
@@ -20,15 +19,14 @@
  */
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Avatar, MaruMark } from "@/components/shared/Avatar";
 import { Button } from "@/components/shared/Button";
 import { askAbout, useCompanion } from "@/components/shared/Companion";
 import { Icon } from "@/components/shared/Icon";
 import { useToast } from "@/components/shared/Toast";
-import type { MomentT, PersonT, ReplyT } from "@/lib/types";
+import type { MomentT, ReplyT } from "@/lib/types";
 import { api, failure } from "./api";
-import { FollowButton, type Followable } from "./FollowButton";
 import { MOMENT_LABEL, hue8 } from "./labels";
 import { Reactions } from "./Reactions";
 import { Replies } from "./Replies";
@@ -38,8 +36,6 @@ import { tagHref } from "./view";
 export function MomentCard({
   moment,
   compact = false,
-  followable = false,
-  onFollow,
   repliesOpen = false,
   initialReplies,
   onTag,
@@ -47,8 +43,6 @@ export function MomentCard({
 }: {
   moment: MomentT;
   compact?: boolean;
-  followable?: boolean | Pick<PersonT, "isFollowing" | "followsYou">;
-  onFollow?: (person: Followable) => void;
   repliesOpen?: boolean;
   initialReplies?: ReplyT[];
   onTag?: (tag: string) => void;
@@ -65,17 +59,6 @@ export function MomentCard({
     if (confirming) keep.current?.focus();
   }, [confirming]);
   const a = moment.author;
-  const known = typeof followable === "object" ? followable : null;
-  const author = useMemo<Followable>(
-    () => ({
-      handle: a.handle,
-      name: a.name,
-      isFollowing: known?.isFollowing ?? false,
-      followsYou: known?.followsYou ?? false,
-      isMe: moment.isMine,
-    }),
-    [a.handle, a.name, known?.isFollowing, known?.followsYou, moment.isMine]
-  );
   if (gone) return null;
 
   const profile = `/u/${a.handle}`;
@@ -135,7 +118,6 @@ export function MomentCard({
         </div>
         {!moment.isMine ? (
           <div className="-mr-1.5 -mt-1 ml-auto flex shrink-0 items-center gap-1">
-            {followable ? <FollowButton size="sm" person={author} onChange={onFollow} /> : null}
             <button
               type="button"
               onClick={() => askAbout({ id: moment._id, label: `${a.name}’s post`, text: moment.text.replace(/\s+/g, " ").slice(0, 80) })}

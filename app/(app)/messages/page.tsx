@@ -23,7 +23,7 @@ export default async function MessagesPage() {
       <PageHeader
         kicker="Messages"
         title="Messages"
-        lede="Write to anyone with a public profile, or anyone who follows you. Only the two of you see a conversation."
+        lede="Write to people who follow you back. Only the two of you see a conversation."
       />
       {list ? (
         <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-12">
@@ -36,7 +36,7 @@ export default async function MessagesPage() {
                 <Icon name="chat" className="h-6 w-6" />
               </span>
               <p className="mt-4 font-display text-display-s">Pick someone to write to</p>
-              <p className="mt-2 text-ink/70">Or start from a profile: every one has a Message button.</p>
+              <p className="mt-2 text-ink/70">Or start from a friend’s profile: once you follow each other, it has a Message button.</p>
             </div>
           </div>
         </div>

@@ -116,7 +116,7 @@ export function AskMaru({ pathname, focused = false }: { pathname: string; focus
 
   if (onHome) return null;
   const raised = !focused && RAISED.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-  // On a phone, a conversation's send button sits where Maru's would: ⌘K and the desktop button stay.
+  // A conversation's send and follow buttons sit where Maru's would, at every width: ⌘K still opens it.
   const chatting = pathname.startsWith("/messages/");
 
   return (
@@ -184,7 +184,7 @@ export function AskMaru({ pathname, focused = false }: { pathname: string; focus
         title={`Ask ${name} (⌘K)`}
         className={`press fixed right-4 z-40 flex items-center gap-2.5 rounded-full border-2 border-edge bg-surface p-1.5 transition-[transform,box-shadow,opacity] duration-300 lg:right-6 lg:pr-4 ${
           focused ? "bottom-5 lg:bottom-6" : raised ? "bottom-[calc(6.5rem+env(safe-area-inset-bottom))]" : "bottom-[calc(5.75rem+env(safe-area-inset-bottom))] lg:bottom-6"
-        } ${open ? "pointer-events-none opacity-0" : ""} ${chatting ? "max-lg:hidden" : ""}`}
+        } ${open ? "pointer-events-none opacity-0" : ""} ${chatting ? "hidden" : ""}`}
       >
         <MaruMark size={44} />
         <span className="hidden max-w-[9rem] truncate font-semibold lg:inline">Ask {name}</span>
