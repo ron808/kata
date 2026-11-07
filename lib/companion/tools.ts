@@ -1251,14 +1251,16 @@ async function startMissionTool(turn: Turn, args: Args): Promise<string> {
   // A second "list for today" adds to the one they have: two of the same is never what they meant.
   const open = await openMissions(ctx);
   const same = open.find((m) => (title ? norm(m.title) === norm(title) : !m.title && m.day === day));
+  const fresh = same ? tasks.filter((t) => !alreadyOn(same, t.title)) : tasks;
+  if (same && tasks.length && !fresh.length) throw new Unable(`That’s all on ${missionName(same, ctx.day)} already.`);
   const mission = same
-    ? await changeMission(ctx, String(same._id), { do: "add", tasks })
+    ? await changeMission(ctx, String(same._id), { do: "add", tasks: fresh })
     : await createMission(ctx, { title, day, tasks, endsAt: until ? endsFrom(until, when) : null });
   if (!mission) throw new Unable("That didn’t save. Try again.");
   turn.changed = true;
   const name = missionName(mission, ctx.day);
-  const timed = tasks.filter((t) => t.at || t.minutes).length;
-  const detail = [tasks.length ? plural(tasks.length, "task") : "", timed ? `${timed} with a time` : ""].filter(Boolean).join(" · ");
+  const timed = fresh.filter((t) => t.at || t.minutes).length;
+  const detail = [fresh.length ? plural(fresh.length, "task") : "", timed ? `${timed} with a time` : ""].filter(Boolean).join(" · ");
   receipt(turn, "mission", same ? `Added to ${name}` : name, detail, missionHref(mission));
   if (args.focus === true) {
     await focusOn(ctx, String(mission._id));
@@ -1287,6 +1289,13 @@ async function changed(turn: Turn, id: string, change: Change): Promise<IMission
 }
 
 const taskCalled = (m: IMission, name: string | undefined) => (name ? closest(m.tasks, name, (t) => t.title) : null);
+
+/** An open task that's the same one said another way ("Call bank" for "Call the bank"): Maru never adds it twice. */
+const sameWords = (s: string) => [...new Set(keywords(s))].sort().join(" ");
+function alreadyOn(m: Pick<IMission, "tasks">, title: string): IMission["tasks"][number] | undefined {
+  const want = sameWords(title);
+  return m.tasks.find((t) => ["todo", "stuck"].includes(t.status) && (norm(t.title) === norm(title) || (want !== "" && sameWords(t.title) === want)));
+}
 
 // Words in a task's name that say which one it is: not "finish" or "the".
 const PLAIN = new Set(["finish", "start", "call", "make", "doing", "done", "with", "this", "that", "some", "more", "about", "today", "tonight", "work", "bit"]);
@@ -1318,23 +1327,31 @@ async function missionTaskTool(turn: Turn, args: Args): Promise<string> {
   const id = String(m._id);
   const out: string[] = [];
   const adding = taskWords(args.add);
+  const there: string[] = [];
   if (adding.length) {
-    const tasks = parseTasks(adding, whenOn(ctx, m.day > ctx.day ? m.day : ctx.day));
-    m = await changed(turn, id, { do: "add", tasks });
-    receipt(turn, "mission", `Added to ${missionName(m, ctx.day)}`, tasks.map((t) => t.title).join(", "), m.focusedAt ? "/focus" : missionHref(m));
-    out.push(`Added ${tasks.map((t) => t.title).join(", ")}.`);
-    if (!m.focusedAt) {
-      turn.choices.push(focusChoice(m, ctx));
-      turn.ask ??= "Focus on it now?";
+    const tasks = parseTasks(adding, whenOn(ctx, m.day > ctx.day ? m.day : ctx.day)).filter((t) => {
+      const same = alreadyOn(m, t.title);
+      if (same) there.push(same.title);
+      return !same;
+    });
+    if (tasks.length) {
+      m = await changed(turn, id, { do: "add", tasks });
+      receipt(turn, "mission", `Added to ${missionName(m, ctx.day)}`, tasks.map((t) => t.title).join(", "), m.focusedAt ? "/focus" : missionHref(m));
+      out.push(`Added ${tasks.map((t) => t.title).join(", ")}.`);
+      if (!m.focusedAt) {
+        turn.choices.push(focusChoice(m, ctx));
+        turn.ask ??= "Focus on it now?";
+      }
     }
   }
+  const onIt = there.length ? `${there.join(", ")} ${there.length === 1 ? "is" : "are"} already on ${missionName(m, ctx.day)}.` : "";
   const action = str(args.do);
   const name = str(args.task);
   const at = str(args.at);
   const minutes = typeof args.minutes === "number" && args.minutes > 0 ? Math.round(args.minutes) : null;
   if (!action && !at && !minutes && !str(args.note)) {
-    if (out.length) return out.join(" ");
-    throw new Unable("Nothing to change.");
+    if (out.length) return [...out, onIt].filter(Boolean).join(" ");
+    throw new Unable(onIt || "Nothing to change.");
   }
   if (action === "pause") {
     m = await changed(turn, id, { do: "pause" });
@@ -1944,6 +1961,14 @@ async function offerChoices(turn: Turn, args: Args): Promise<string> {
     if (tool === "create_thread" && titleOf(toolArgs.title) && (await Thread.exists({ userId: turn.ctx.userId, key: threadKey(titleOf(toolArgs.title)), archived: false }))) {
       tracked.push(titleOf(toolArgs.title));
       continue;
+    }
+    if (tool === "mission_task" && !str(toolArgs.do) && taskWords(toolArgs.add).length) {
+      const m = await theMission(turn, str(toolArgs.mission)).catch(() => null);
+      const on = m ? parseTasks(taskWords(toolArgs.add), whenOn(turn.ctx, m.day)).map((t) => alreadyOn(m, t.title)?.title) : [];
+      if (on.length && on.every(Boolean)) {
+        tracked.push(...(on as string[]));
+        continue;
+      }
     }
     const stray = await strayThread(turn, tool, toolArgs);
     if (stray) {

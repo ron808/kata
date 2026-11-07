@@ -1,9 +1,8 @@
-import { Types } from "mongoose";
-import { Follow } from "@/lib/db/models/Follow";
 import { Thread, type IThread } from "@/lib/db/models/Thread";
 import { User } from "@/lib/db/models/User";
 import type { ThreadStatus } from "@/lib/types";
 import { hueOf } from "./dto";
+import { yourPeople } from "./visibility";
 
 export interface WorkingOnT {
   handle: string;
@@ -14,12 +13,12 @@ export interface WorkingOnT {
   lastTouchedAt: string;
 }
 
-/** What the people you follow chose to show as working on, freshest first. */
+/** What your people chose to show as working on, freshest first: like the rest of home, only the ones you picked once you've picked. */
 export async function workingOn(viewerId: string, limit = 5): Promise<WorkingOnT[]> {
-  const follows = await Follow.find({ followerId: new Types.ObjectId(viewerId) }).select("followeeId").lean();
-  if (!follows.length) return [];
+  const { ids } = await yourPeople(viewerId);
+  if (!ids.length) return [];
   const threads = await Thread.find({
-    userId: { $in: follows.map((f) => f.followeeId) },
+    userId: { $in: ids },
     shared: true,
     archived: false,
     status: { $ne: "paused" },

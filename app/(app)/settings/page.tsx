@@ -19,6 +19,8 @@ import { RoleField } from "@/components/settings/RoleField";
 import { ProfileForm } from "@/components/settings/ProfileForm";
 import { PublishToggle } from "@/components/settings/PublishToggle";
 import { SignOutButton } from "@/components/settings/SignOutButton";
+import { StartOver } from "@/components/settings/StartOver";
+import { accountCounts } from "@/lib/account";
 import { AppPage, EmptyNote, PageHeader } from "@/components/shared/AppPage";
 import { buttonClass } from "@/components/shared/Button";
 import { DbNotConfigured } from "@/components/shared/DbNotConfigured";
@@ -29,15 +31,16 @@ export const metadata: Metadata = { title: "Settings · Kata" };
 
 async function load(userId: string) {
   await connectDB();
-  const [me, user, { name }] = await Promise.all([
+  const [me, user, { name }, counts] = await Promise.all([
     loadMe(userId),
     User.findById(userId).select("email checkIn timezone activeTemplateId role").lean(),
     namesFor(userId),
+    accountCounts(userId),
   ]);
   const template = user?.activeTemplateId
     ? await Template.findOne({ _id: user.activeTemplateId, userId }).select("name description fields isPublished credit publishedSlug").lean()
     : null;
-  return { me, user, template, name };
+  return { me, user, template, name, counts };
 }
 
 export default async function SettingsPage() {
@@ -50,7 +53,7 @@ export default async function SettingsPage() {
   } catch (err) {
     return <DbNotConfigured error={err instanceof Error ? err.message : null} />;
   }
-  const { me, user, template, name } = data;
+  const { me, user, template, name, counts } = data;
   if (!me || !user) redirect("/login");
 
   const fields = template ? [...template.fields].sort((a, b) => a.order - b.order) : [];
@@ -174,6 +177,10 @@ export default async function SettingsPage() {
               <p className="text-sm text-ink/70">Done for now? Your pages will be here.</p>
               <SignOutButton />
             </div>
+          </Card>
+
+          <Card id="start-over" title="Start fresh or leave" note="Both ask a few questions first, and neither can be undone.">
+            <StartOver counts={counts} companion={name} />
           </Card>
         </div>
       </div>
