@@ -33,6 +33,8 @@ export const ProfilePatchSchema = z.object({
   name: z.string().trim().min(1).max(80).optional(),
   bio: z.string().trim().max(160).optional(),
   isPublic: z.boolean().optional(),
+  /** Friends see when they're here and typing. */
+  showActive: z.boolean().optional(),
   interests: tagList(12).optional(),
   role: z.string().trim().max(60).optional(),
 });

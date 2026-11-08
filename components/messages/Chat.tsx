@@ -1,19 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent } from "react";
 import { Avatar } from "@/components/shared/Avatar";
 import { Button } from "@/components/shared/Button";
 import { Icon } from "@/components/shared/Icon";
 import { useToast } from "@/components/shared/Toast";
 import { FollowButton } from "@/components/people/FollowButton";
+import { activeLabel, isActiveNow } from "@/lib/social/active";
+import { stickerOf } from "@/lib/stickers";
 import type { DirectMessageT, ThreadOpenT } from "@/lib/types";
+import { Picker } from "./Picker";
+import { Sticker } from "./Sticker";
 
 const MAX = 2000;
 /** Sent when a conversation changes here, so the list beside it catches up. */
 export const CHANGED_EVENT = "kata:messages";
-// New messages are fetched this often while the conversation is on screen.
-const POLL = 4000;
+// New messages are fetched this often while the conversation is on screen: sooner while they're around.
+const POLL_NEAR = 2000;
+const POLL_AWAY = 5000;
+/** Typing pings go at most this often while someone types. */
+const TYPING_EVERY = 3000;
+
+const noop = () => () => {};
 
 /** Messages in time order, each once. */
 function merge(a: DirectMessageT[], b: DirectMessageT[]): DirectMessageT[] {
@@ -34,11 +43,24 @@ function dayLabel(iso: string, tz: string): string {
 
 const clock = (iso: string, tz: string) => new Date(iso).toLocaleTimeString("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit" });
 
+/** A message that's only a few emoji is drawn big, without a bubble. */
+const graphemes = typeof Intl !== "undefined" && "Segmenter" in Intl ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
+function bigEmoji(text: string): boolean {
+  const t = text.trim();
+  if (!t || t.length > 24 || !graphemes) return false;
+  const parts = [...graphemes.segment(t)].map((s) => s.segment).filter((s) => s.trim());
+  return parts.length > 0 && parts.length <= 3 && parts.every((p) => /\p{Extended_Pictographic}/u.test(p));
+}
+
+/** A sticker is stuck on at a small angle of its own, the same every time. */
+const tiltOf = (id: string) => (((parseInt(id.slice(-3), 16) || 0) % 7) - 3) * 1.5;
+
 /**
- * One conversation: their messages in their hue, yours in sun, a box to write in, and new
- * messages as they arrive. Only people who follow each other can write: otherwise (or blocked,
- * or no handle yet) the box says why instead, with the follow that would open it. It opens by
- * itself when they follow back.
+ * One conversation: their messages in their hue, yours in sun, a box to write in (with emoji and
+ * Kata's stickers), and new messages as they arrive. Friends see when the other is here and typing,
+ * unless either turned that off. Only people who follow each other can write: otherwise (or blocked,
+ * or no handle yet) the box says why instead, with the follow that would open it. It opens by itself
+ * when they follow back.
  */
 export function Chat({ initial, draft = "", tz }: { initial: ThreadOpenT; draft?: string; tz: string }) {
   const { toast } = useToast();
@@ -50,16 +72,25 @@ export function Chat({ initial, draft = "", tz }: { initial: ThreadOpenT; draft?
   const [closed, setClosed] = useState(initial.closed);
   const [blocked, setBlocked] = useState(initial.blocked);
   const [link, setLink] = useState({ isFollowing: initial.isFollowing, followsYou: initial.followsYou });
+  const [active, setActive] = useState(initial.active);
+  const [typing, setTyping] = useState(initial.typing);
   const [text, setText] = useState(draft.slice(0, MAX));
   const [sending, setSending] = useState(false);
   const [arming, setArming] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [picker, setPicker] = useState(false);
+  // "Active now" depends on the clock, so it's only drawn in the browser, and kept current by the poll.
+  const mounted = useSyncExternalStore(noop, () => true, () => false);
+  const [now, setNow] = useState(() => Date.now());
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  const toggle = useRef<HTMLButtonElement>(null);
   // Scroll to the newest line when one arrives, unless they've scrolled up to read.
   const pinned = useRef(true);
   const keepFrom = useRef<number | null>(null);
   const latest = useRef<string | null>(null);
+  const near = useRef(initial.typing);
+  const typedAt = useRef(0);
   useEffect(() => {
     latest.current = [...messages].reverse().find((m) => !m._id.startsWith("pending-"))?.createdAt ?? null;
   }, [messages]);
@@ -74,60 +105,139 @@ export function Chat({ initial, draft = "", tz }: { initial: ThreadOpenT; draft?
     } else if (pinned.current) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, typing]);
 
   useEffect(() => {
     let live = true;
+    let timer = 0;
+    let busy = false;
     const tick = async () => {
-      if (document.visibilityState !== "visible") return;
-      const after = latest.current;
-      const res = await fetch(`/api/messages/${person.handle}${after ? `?after=${encodeURIComponent(after)}` : ""}`, { cache: "no-store" }).catch(() => null);
-      if (!res?.ok || !live) return;
-      const data = (await res.json()) as ThreadOpenT;
-      if (!live) return;
-      if (data.messages.length) setMessages((ms) => merge(ms, data.messages));
-      setClosed(data.closed);
-      setBlocked(data.blocked);
-      setLink({ isFollowing: data.isFollowing, followsYou: data.followsYou });
+      window.clearTimeout(timer);
+      if (busy) return;
+      if (document.visibilityState === "visible") {
+        busy = true;
+        const after = latest.current;
+        const res = await fetch(`/api/messages/${person.handle}${after ? `?after=${encodeURIComponent(after)}` : ""}`, { cache: "no-store" }).catch(() => null);
+        busy = false;
+        if (!live) return;
+        if (res?.ok) {
+          const data = (await res.json()) as ThreadOpenT;
+          if (!live) return;
+          if (data.messages.length) setMessages((ms) => merge(ms, data.messages));
+          setClosed(data.closed);
+          setBlocked(data.blocked);
+          setLink({ isFollowing: data.isFollowing, followsYou: data.followsYou });
+          setActive(data.active);
+          setTyping(data.typing);
+          setNow(Date.now());
+          near.current = data.typing || isActiveNow(data.active);
+        }
+      }
+      if (live) timer = window.setTimeout(tick, near.current ? POLL_NEAR : POLL_AWAY);
     };
-    const timer = window.setInterval(tick, POLL);
+    const wake = () => {
+      if (document.visibilityState === "visible") void tick();
+    };
+    near.current = near.current || isActiveNow(initial.active);
+    timer = window.setTimeout(tick, near.current ? POLL_NEAR : POLL_AWAY);
+    document.addEventListener("visibilitychange", wake);
     return () => {
       live = false;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", wake);
     };
-  }, [person.handle]);
+  }, [person.handle, initial.active]);
 
-  async function send(e?: FormEvent) {
-    e?.preventDefault();
-    const words = text.trim();
-    if (!words || sending || closed) return;
-    const pending: DirectMessageT = { _id: `pending-${Date.now()}`, text: words, mine: true, createdAt: new Date().toISOString() };
+  /** Tells the other side they're typing (every few seconds at most), or that they stopped. */
+  function ping(on: boolean) {
+    void fetch(`/api/messages/${person.handle}/typing`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ typing: on }),
+    }).catch(() => {});
+  }
+
+  function onText(next: string) {
+    setText(next);
+    if (closed) return;
+    const at = Date.now();
+    if (next.trim()) {
+      if (at - typedAt.current > TYPING_EVERY) {
+        typedAt.current = at;
+        ping(true);
+      }
+    } else if (typedAt.current) {
+      typedAt.current = 0;
+      ping(false);
+    }
+  }
+
+  /** Sends words or a sticker, showing it at once and taking it back if it doesn't go. */
+  async function deliver(said: { text?: string; sticker?: string }) {
+    const pending: DirectMessageT = { _id: `pending-${Date.now()}`, text: said.text ?? "", sticker: said.sticker ?? null, mine: true, createdAt: new Date().toISOString() };
     pinned.current = true;
+    // Sending ends the typing on the server.
+    typedAt.current = 0;
     setMessages((ms) => [...ms, pending]);
-    setText("");
     setSending(true);
     try {
       const res = await fetch(`/api/messages/${person.handle}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: words }),
+        body: JSON.stringify(said),
       });
       const data = (await res.json().catch(() => ({}))) as { message?: DirectMessageT; error?: string };
       if (!res.ok || !data.message) throw new Error(data.error ?? "That didn’t send. Try again.");
       setMessages((ms) => merge(ms.filter((m) => m._id !== pending._id), [data.message!]));
       // The list beside it (on a desktop) shows the conversation at once, even a new one.
       window.dispatchEvent(new Event(CHANGED_EVENT));
+      return true;
     } catch (err) {
       setMessages((ms) => ms.filter((m) => m._id !== pending._id));
-      setText(words);
       toast(err instanceof Error ? err.message : "That didn’t send. Try again.", "danger");
+      return false;
     } finally {
       setSending(false);
-      input.current?.focus();
     }
   }
 
+  async function send(e?: FormEvent) {
+    e?.preventDefault();
+    const words = text.trim();
+    if (!words || sending || closed) return;
+    setText("");
+    if (!(await deliver({ text: words }))) setText(words);
+    if (matchMedia("(pointer: fine)").matches || !picker) input.current?.focus();
+  }
+
+  function sendSticker(sticker: string) {
+    if (sending || closed) return;
+    setPicker(false);
+    void deliver({ sticker });
+    toggle.current?.focus();
+  }
+
+  function insertEmoji(e: string) {
+    const el = input.current;
+    const start = el?.selectionStart ?? text.length;
+    const end = el?.selectionEnd ?? text.length;
+    const next = (text.slice(0, start) + e + text.slice(end)).slice(0, MAX);
+    onText(next);
+    const at = Math.min(start + e.length, next.length);
+    requestAnimationFrame(() => {
+      if (!el) return;
+      // A phone's keyboard would cover the picker, so only a keyboard and mouse go back to the box.
+      if (matchMedia("(pointer: fine)").matches) el.focus();
+      el.setSelectionRange(at, at);
+    });
+  }
+
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Escape" && picker) {
+      e.preventDefault();
+      setPicker(false);
+      return;
+    }
     // Enter sends on a keyboard; on a phone it makes a new line and the button sends.
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && matchMedia("(pointer: fine)").matches) {
       e.preventDefault();
@@ -174,6 +284,9 @@ export function Chat({ initial, draft = "", tz }: { initial: ThreadOpenT; draft?
     }
   }
 
+  const here = mounted && isActiveNow(active, now);
+  const status = typing ? "Typing…" : mounted ? activeLabel(active, now) : null;
+
   return (
     <section
       aria-labelledby={`${id}-who`}
@@ -184,12 +297,18 @@ export function Chat({ initial, draft = "", tz }: { initial: ThreadOpenT; draft?
           <Icon name="arrow-left" className="h-5 w-5" />
         </Link>
         <Link href={`/u/${person.handle}`} className="flex min-w-0 flex-1 items-center gap-3 rounded-md">
-          <Avatar name={person.name} hue={person.hue} size={44} />
+          <span className="relative shrink-0">
+            <Avatar name={person.name} hue={person.hue} size={44} />
+            {here ? <span aria-hidden className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full border-2 border-surface bg-ok" /> : null}
+          </span>
           <span className="min-w-0">
             <span id={`${id}-who`} className="block truncate font-semibold leading-tight">
               {person.name}
             </span>
-            <span className="block truncate text-[0.8125rem] text-ink/65">@{person.handle}</span>
+            <span className="block truncate text-[0.8125rem] text-ink/65">
+              @{person.handle}
+              {status ? <span className={typing ? "font-semibold text-ink/80" : ""}> · {status}</span> : null}
+            </span>
           </span>
         </Link>
         <button
@@ -228,6 +347,8 @@ export function Chat({ initial, draft = "", tz }: { initial: ThreadOpenT; draft?
               const newDay = !prev || dayKey(prev.createdAt, tz) !== dayKey(m.createdAt, tz);
               // The time goes under the last of a run from one person.
               const lastOfRun = !next || next.mine !== m.mine || Date.parse(next.createdAt) - Date.parse(m.createdAt) > 10 * 60_000;
+              const pending = m._id.startsWith("pending-");
+              const sticker = stickerOf(m.sticker);
               return (
                 <li key={m._id} className="appear grid grid-cols-1">
                   {newDay ? (
@@ -236,18 +357,26 @@ export function Chat({ initial, draft = "", tz }: { initial: ThreadOpenT; draft?
                     </p>
                   ) : null}
                   <div className={`flex ${m.mine ? "justify-end" : "justify-start"}`}>
-                    <p
-                      data-hue={m.mine ? undefined : person.hue}
-                      className={`max-w-[min(34rem,82%)] whitespace-pre-line px-4 py-2.5 leading-snug [overflow-wrap:anywhere] ${
-                        m.mine ? "bubble-you" : "rounded-[22px] rounded-tl-[6px] border-2 border-edge bg-tint text-deep"
-                      } ${m._id.startsWith("pending-") ? "opacity-70" : ""}`}
-                    >
-                      {m.text}
-                    </p>
+                    {sticker ? (
+                      <div className={`p-1.5 ${pending ? "opacity-70" : ""}`} style={{ transform: `rotate(${tiltOf(m._id)}deg)` }}>
+                        <Sticker id={sticker.id} size={112} />
+                      </div>
+                    ) : bigEmoji(m.text) ? (
+                      <p className={`px-1 text-[2.75rem] leading-[1.15] ${pending ? "opacity-70" : ""}`}>{m.text}</p>
+                    ) : (
+                      <p
+                        data-hue={m.mine ? undefined : person.hue}
+                        className={`max-w-[min(34rem,82%)] whitespace-pre-line px-4 py-2.5 leading-snug [overflow-wrap:anywhere] ${
+                          m.mine ? "bubble-you" : "rounded-[22px] rounded-tl-[6px] border-2 border-edge bg-tint text-deep"
+                        } ${pending ? "opacity-70" : ""}`}
+                      >
+                        {m.text}
+                      </p>
+                    )}
                   </div>
                   {lastOfRun ? (
                     <p className={`mt-1 px-1 text-[0.75rem] text-ink/65 ${m.mine ? "text-right" : ""}`}>
-                      {m._id.startsWith("pending-") ? "Sending…" : clock(m.createdAt, tz)}
+                      {pending ? "Sending…" : clock(m.createdAt, tz)}
                     </p>
                   ) : null}
                 </li>
@@ -263,6 +392,18 @@ export function Chat({ initial, draft = "", tz }: { initial: ThreadOpenT; draft?
             </div>
           </div>
         )}
+        {typing && !closed ? (
+          <div className="mt-1.5 flex justify-start" role="status">
+            <p data-hue={person.hue} className="rounded-[22px] rounded-tl-[6px] border-2 border-edge bg-tint px-4 py-3.5 text-deep">
+              <span className="sr-only">{first} is typing</span>
+              <span aria-hidden className="typing">
+                <i />
+                <i />
+                <i />
+              </span>
+            </p>
+          </div>
+        ) : null}
       </div>
 
       {closed ? (
@@ -290,30 +431,54 @@ export function Chat({ initial, draft = "", tz }: { initial: ThreadOpenT; draft?
           ) : null}
         </div>
       ) : (
-        <form onSubmit={send} className="mt-3 flex shrink-0 items-end gap-2">
-          <label htmlFor={`${id}-input`} className="sr-only">
-            Message {person.name}
-          </label>
-          <textarea
-            ref={input}
-            id={`${id}-input`}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={onKeyDown}
-            maxLength={MAX}
-            rows={1}
-            placeholder={`Message ${first}`}
-            className="control max-h-40 !min-h-12 resize-none !rounded-[1.5rem] !py-3 leading-snug [field-sizing:content]"
-          />
-          <button
-            type="submit"
-            disabled={!text.trim() || sending}
-            aria-label="Send"
-            className="press grid h-12 w-12 shrink-0 place-items-center rounded-full border-2 border-edge bg-sun text-on-sun transition-[transform,box-shadow,opacity] duration-300 disabled:opacity-45"
-          >
-            <Icon name="send" className="h-5 w-5" />
-          </button>
-        </form>
+        <>
+          <form onSubmit={send} className="mt-3 flex shrink-0 items-end gap-1.5 sm:gap-2">
+            <button
+              ref={toggle}
+              type="button"
+              onClick={() => setPicker((p) => !p)}
+              aria-expanded={picker}
+              aria-controls={`${id}-picker`}
+              aria-label="Emoji and stickers"
+              className="grid h-12 w-12 shrink-0 place-items-center rounded-full border-2 border-transparent text-ink/70 transition-colors hover:bg-ink/[0.06] hover:text-ink aria-expanded:border-edge aria-expanded:bg-sun aria-expanded:text-on-sun"
+            >
+              <Icon name="smile" className="h-6 w-6" />
+            </button>
+            <label htmlFor={`${id}-input`} className="sr-only">
+              Message {person.name}
+            </label>
+            <textarea
+              ref={input}
+              id={`${id}-input`}
+              value={text}
+              onChange={(e) => onText(e.target.value)}
+              onKeyDown={onKeyDown}
+              maxLength={MAX}
+              rows={1}
+              placeholder={`Message ${first}`}
+              className="control max-h-40 !min-h-12 min-w-0 resize-none !rounded-[1.5rem] !py-3 leading-snug [field-sizing:content]"
+            />
+            <button
+              type="submit"
+              disabled={!text.trim() || sending}
+              aria-label="Send"
+              className="press grid h-12 w-12 shrink-0 place-items-center rounded-full border-2 border-edge bg-sun text-on-sun transition-[transform,box-shadow,opacity] duration-300 disabled:opacity-45"
+            >
+              <Icon name="send" className="h-5 w-5" />
+            </button>
+          </form>
+          {picker ? (
+            <Picker
+              id={`${id}-picker`}
+              onEmoji={insertEmoji}
+              onSticker={sendSticker}
+              onClose={() => {
+                setPicker(false);
+                toggle.current?.focus();
+              }}
+            />
+          ) : null}
+        </>
       )}
     </section>
   );

@@ -2,13 +2,23 @@
 
 import type { ReactNode } from "react";
 
-/** Whether a profile is listed: in Settings, and on setup's handle step. Both say the same thing. */
+const LISTED = {
+  on: "Anyone on Kata can find you by name, and you can come up in their suggestions.",
+  off: "Only someone who types your whole handle can find you.",
+};
+
+/**
+ * Whether a profile is listed: in Settings, and on setup's handle step. Both say the same thing.
+ * `copy` gives another on/off setting (showing when you're active) the same switch.
+ */
 export function PublicSwitch({
   id,
   label,
   on,
   onChange,
   error,
+  copy = LISTED,
+  disabled = false,
   className = "",
   children,
 }: {
@@ -17,6 +27,8 @@ export function PublicSwitch({
   on: boolean;
   onChange: (on: boolean) => void;
   error?: string;
+  copy?: { on: string; off: string };
+  disabled?: boolean;
   className?: string;
   children?: ReactNode;
 }) {
@@ -28,9 +40,7 @@ export function PublicSwitch({
             {label}
           </p>
           <p id={`${id}-desc`} className="mt-1 text-sm text-ink/75">
-            {on
-              ? "Anyone on Kata can find you by name, and you can come up in their suggestions."
-              : "Only someone who types your whole handle can find you."}
+            {on ? copy.on : copy.off}
           </p>
         </div>
         <button
@@ -40,6 +50,7 @@ export function PublicSwitch({
           aria-checked={on}
           aria-labelledby={`${id}-label`}
           aria-describedby={`${id}-desc${error ? ` ${id}-err` : ""}`}
+          disabled={disabled}
           onClick={() => onChange(!on)}
           className="group grid h-11 w-16 shrink-0 place-items-center rounded-full"
         >

@@ -20,6 +20,7 @@ import { ProfileForm } from "@/components/settings/ProfileForm";
 import { PublishToggle } from "@/components/settings/PublishToggle";
 import { SignOutButton } from "@/components/settings/SignOutButton";
 import { StartOver } from "@/components/settings/StartOver";
+import { ActiveSwitch } from "@/components/settings/ActiveSwitch";
 import { accountCounts } from "@/lib/account";
 import { AppPage, EmptyNote, PageHeader } from "@/components/shared/AppPage";
 import { buttonClass } from "@/components/shared/Button";
@@ -33,7 +34,7 @@ async function load(userId: string) {
   await connectDB();
   const [me, user, { name }, counts] = await Promise.all([
     loadMe(userId),
-    User.findById(userId).select("email checkIn timezone activeTemplateId role").lean(),
+    User.findById(userId).select("email checkIn timezone activeTemplateId role showActive").lean(),
     namesFor(userId),
     accountCounts(userId),
   ]);
@@ -166,6 +167,9 @@ export default async function SettingsPage() {
                 <dd className="min-w-0 font-medium">{(user.timezone || "UTC").replace(/_/g, " ")}</dd>
               </div>
             </dl>
+            <div className="mt-5">
+              <ActiveSwitch initial={user.showActive !== false} />
+            </div>
             <div className="rule mt-6 border-t-2 pt-6">
               <h3 id="password-title" className="font-semibold">
                 Change password

@@ -32,7 +32,8 @@ export async function PATCH(request: Request) {
     const user = await User.findById(session.user.id).select("handle isPublic hue").lean();
     if (!user) return jsonError("Account not found.", 404);
 
-    const set: Partial<Pick<IUser, "handle" | "name" | "bio" | "isPublic" | "interests" | "hue" | "role">> = {};
+    const set: Partial<Pick<IUser, "handle" | "name" | "bio" | "isPublic" | "showActive" | "interests" | "hue" | "role">> = {};
+    if (data.showActive !== undefined) set.showActive = data.showActive;
     if (data.handle !== undefined) {
       const check = await checkHandle(data.handle, session.user.id);
       if (!check.ok) return jsonError(check.reason, check.taken ? 409 : 400);

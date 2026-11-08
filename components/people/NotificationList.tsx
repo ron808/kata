@@ -41,15 +41,21 @@ export function NotificationList({
 }) {
   const router = useRouter();
   const [fresh, setFresh] = useState<Set<string>>(() => new Set(items.filter((n) => !n.read).map((n) => n._id)));
-  const marked = useRef(false);
+  // One that arrives while the page is open (the shell refreshes it in) is new too.
+  const [shown, setShown] = useState(items);
+  if (items !== shown) {
+    setShown(items);
+    setFresh((f) => new Set([...f, ...items.filter((n) => !n.read).map((n) => n._id)]));
+  }
+  const marking = useRef(false);
 
-  // Seen is read: tell the server once, then refresh so the bell's count goes.
+  // Seen is read: tell the server, then refresh so the bell's count goes. Again for any that arrive.
   useEffect(() => {
-    if (marked.current || !unread) return;
-    marked.current = true;
+    if (marking.current || !unread) return;
+    marking.current = true;
     api("/api/notifications", { method: "POST", body: { read: "all" } }).then((r) => {
+      marking.current = false;
       if (r.ok) router.refresh();
-      else marked.current = false;
     });
   }, [unread, router]);
 

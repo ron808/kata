@@ -15,6 +15,7 @@ import { CompanionProvider } from "./Companion";
 import { Icon, type IconName } from "./Icon";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
+import { useToast } from "./Toast";
 
 export interface ShellUser {
   name: string;
@@ -64,7 +65,7 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const messages = useUnreadMessages(messagesAtLoad, pathname);
+  const { notifications: unreadNow, messages } = usePulse({ notifications: unread, messages: messagesAtLoad }, pathname);
   // Focus modes bring their own bottom bar, so the tab bar steps aside.
   const writing = pathname.startsWith("/entry/new");
   const focused = writing || pathname === "/settings/template";
@@ -129,7 +130,7 @@ export function AppShell({
             <Link href="/dashboard" aria-label="Kata, home" className="flex min-h-11 items-center">
               <Logo cut="ground" />
             </Link>
-            <Bell unread={unread} active={pathname === "/notifications"} />
+            <Bell unread={unreadNow} active={pathname === "/notifications"} />
           </div>
           <nav aria-label="Primary" className="mt-4">
             <ul className="space-y-1">
@@ -182,7 +183,7 @@ export function AppShell({
           </Link>
           <div className="flex items-center gap-1.5">
             <Inbox unread={messages} active={pathname.startsWith("/messages")} />
-            <Bell unread={unread} active={pathname === "/notifications"} />
+            <Bell unread={unreadNow} active={pathname === "/notifications"} />
             <AccountMenu user={user} pathname={pathname} placement="down" compact />
           </div>
         </header>
@@ -288,31 +289,90 @@ function useFocusMode(user: ShellUser): { on: boolean; theme: FocusTheme } {
   return { on, theme };
 }
 
-/** Messages waiting: from the page load, then checked every so often and on every page change. */
-function useUnreadMessages(atLoad: number, pathname: string): number {
-  const [count, setCount] = useState(atLoad);
+/** Ask the shell to check for notifications and messages now, after something that changes them. */
+export const PULSE_EVENT = "kata:pulse";
+
+type Counts = { notifications: number; messages: number };
+type Pulse = Counts & { newestAt: string | null; checkedAt: string; latest: { text: string } | null };
+
+/**
+ * Notifications and messages waiting, kept fresh by `/api/pulse`: every 10 seconds while they're
+ * using Kata, every 30 once they've gone quiet, never in a hidden tab, and at once when they come
+ * back to it or change page. A notification that arrives while Kata is open shows as a toast, and
+ * the notifications page takes it in. The same check is how friends see they're here.
+ */
+function usePulse(atLoad: Counts, pathname: string): Counts {
+  const router = useRouter();
+  const { toast } = useToast();
+  const [counts, setCounts] = useState(atLoad);
   const [seen, setSeen] = useState(atLoad);
-  if (atLoad !== seen) {
+  if (atLoad.notifications !== seen.notifications || atLoad.messages !== seen.messages) {
     setSeen(atLoad);
-    setCount(atLoad);
+    setCounts(atLoad);
   }
+  const known = useRef(atLoad);
+  const page = useRef(pathname);
+  // The newest notification the shell has heard about (server time), so only newer ones toast.
+  const since = useRef<string | null>(null);
+  const lastInput = useRef(0);
+  const lastCheck = useRef(0);
+  useEffect(() => {
+    known.current = counts;
+  }, [counts]);
+  useEffect(() => {
+    page.current = pathname;
+  }, [pathname]);
+
   useEffect(() => {
     let live = true;
-    const check = async () => {
-      if (document.visibilityState !== "visible") return;
-      const res = await fetch("/api/messages/unread", { cache: "no-store" }).catch(() => null);
-      if (!res?.ok || !live) return;
-      const data = (await res.json()) as { unread: number };
-      if (live) setCount(data.unread);
+    let timer = 0;
+    let busy = false;
+    lastInput.current = Date.now();
+    const tick = async () => {
+      window.clearTimeout(timer);
+      if (document.visibilityState !== "visible" || busy) return;
+      busy = true;
+      lastCheck.current = Date.now();
+      const res = await fetch(`/api/pulse${since.current ? `?after=${encodeURIComponent(since.current)}` : ""}`, { cache: "no-store" }).catch(() => null);
+      busy = false;
+      if (!live) return;
+      if (res?.ok) {
+        const data = (await res.json()) as Pulse;
+        if (!live) return;
+        const before = known.current;
+        known.current = { notifications: data.notifications, messages: data.messages };
+        setCounts(known.current);
+        const reading = page.current === "/notifications";
+        if (data.latest && !reading) toast(data.latest.text);
+        if (reading && data.notifications > before.notifications) router.refresh();
+        since.current = data.newestAt ?? since.current ?? data.checkedAt;
+      }
+      const quiet = Date.now() - lastInput.current > 2 * 60_000;
+      timer = window.setTimeout(tick, quiet ? 30_000 : 10_000);
     };
-    void check();
-    const id = window.setInterval(check, 30_000);
+    // Coming back to the tab fires focus and visibilitychange together: one check does for both.
+    const wake = () => {
+      if (Date.now() - lastCheck.current > 1500) void tick();
+    };
+    const stir = () => {
+      lastInput.current = Date.now();
+    };
+    const inputs = ["pointerdown", "keydown", "wheel", "touchstart"] as const;
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("focus", wake);
+    window.addEventListener(PULSE_EVENT, wake);
+    for (const e of inputs) window.addEventListener(e, stir, { passive: true });
+    void tick();
     return () => {
       live = false;
-      window.clearInterval(id);
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("focus", wake);
+      window.removeEventListener(PULSE_EVENT, wake);
+      for (const e of inputs) window.removeEventListener(e, stir);
     };
-  }, [pathname]);
-  return count;
+  }, [pathname, router, toast]);
+  return counts;
 }
 
 /** Messages, beside the bell on a phone (the tab bar has no room). */

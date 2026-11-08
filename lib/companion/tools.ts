@@ -2059,7 +2059,7 @@ async function saveProfile(turn: Turn, args: Args): Promise<string> {
 async function sendMessageTool(turn: Turn, args: Args): Promise<string> {
   const handle = str(args.handle) ?? "";
   if (!(await checkLimit(limiters.message, `message:${turn.ctx.userId}`)).ok) throw new Unable("That's a lot of messages for one hour. Try again later.");
-  const sent = await sendMessage(turn.ctx.userId, handle, str(args.text) ?? "");
+  const sent = await sendMessage(turn.ctx.userId, handle, { text: str(args.text) ?? "" });
   if (!sent.ok) throw new Unable(sent.error);
   receipt(turn, "message", `Sent to ${str(args.name) ?? `@${handle}`}`, quoted(sent.value.text), `/messages/${handle}`);
   return "Sent.";

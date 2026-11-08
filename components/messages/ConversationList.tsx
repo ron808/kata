@@ -1,13 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Avatar } from "@/components/shared/Avatar";
 import { Ago } from "@/components/people/time";
+import { isActiveNow } from "@/lib/social/active";
 import type { ConversationT } from "@/lib/types";
 import { CHANGED_EVENT } from "./Chat";
 
-/** Everyone you're writing with, the latest first; it checks for new messages while it's on screen. */
+const noop = () => () => {};
+
+/**
+ * Everyone you're writing with, the latest first; it checks for new messages while it's on screen.
+ * A friend who's here now (and shows it) has a dot, drawn only in the browser since it's about the clock.
+ */
 export function ConversationList({ initial, active = null }: { initial: ConversationT[]; active?: string | null }) {
   const [list, setList] = useState(initial);
   const [seen, setSeen] = useState(initial);
@@ -15,6 +21,7 @@ export function ConversationList({ initial, active = null }: { initial: Conversa
     setSeen(initial);
     setList(initial);
   }
+  const mounted = useSyncExternalStore(noop, () => true, () => false);
 
   useEffect(() => {
     let live = true;
@@ -53,6 +60,7 @@ export function ConversationList({ initial, active = null }: { initial: Conversa
       <ul>
         {list.map((c) => {
           const here = active === c.person.handle;
+          const on = mounted && isActiveNow(c.active);
           return (
             <li key={c.person.handle} className="rule border-t-2 first:border-t-0">
               <Link
@@ -60,10 +68,16 @@ export function ConversationList({ initial, active = null }: { initial: Conversa
                 aria-current={here ? "page" : undefined}
                 className={`flex min-h-16 items-center gap-3 rounded-md px-3 py-2.5 transition-colors ${here ? "bg-sun text-on-sun" : "hover:bg-ink/[0.04]"}`}
               >
-                <Avatar name={c.person.name} hue={c.person.hue} size={44} />
+                <span className="relative shrink-0">
+                  <Avatar name={c.person.name} hue={c.person.hue} size={44} />
+                  {on ? <span aria-hidden className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full border-2 border-surface bg-ok" /> : null}
+                </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline justify-between gap-2">
-                    <span className={`truncate ${c.unread ? "font-bold" : "font-semibold"}`}>{c.person.name}</span>
+                    <span className={`truncate ${c.unread ? "font-bold" : "font-semibold"}`}>
+                      {c.person.name}
+                      {on ? <span className="sr-only">, active now</span> : null}
+                    </span>
                     <Ago iso={c.lastAt} className={`shrink-0 text-[0.8125rem] ${here ? "opacity-80" : "text-ink/65"}`} />
                   </span>
                   <span className={`mt-0.5 block truncate text-[0.875rem] ${here ? "opacity-85" : c.unread ? "font-semibold text-ink" : "text-ink/70"}`}>

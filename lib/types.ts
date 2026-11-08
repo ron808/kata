@@ -310,11 +310,15 @@ export interface ConversationT {
   unread: number;
   /** The viewer blocked them. */
   blocked: boolean;
+  /** When they were last here, if the viewer may see it (friends, both showing it). */
+  active: string | null;
 }
 
 export interface DirectMessageT {
   _id: string;
   text: string;
+  /** One of Kata's stickers (`lib/stickers.ts`) instead of words. */
+  sticker?: string | null;
   mine: boolean;
   createdAt: string;
 }
@@ -331,6 +335,10 @@ export interface ThreadOpenT {
   /** Who follows whom, so a closed conversation can offer the follow that opens it. */
   isFollowing: boolean;
   followsYou: boolean;
+  /** When they were last here, if the viewer may see it. */
+  active: string | null;
+  /** They're writing something right now. */
+  typing: boolean;
 }
 
 export interface NotificationT {

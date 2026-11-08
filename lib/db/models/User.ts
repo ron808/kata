@@ -40,6 +40,13 @@ export interface IUser {
   focusMissionId: mongoose.Types.ObjectId | null;
   /** The colours focus wears. */
   focusTheme: FocusTheme;
+  /** When they last had Kata open, kept by the shell's pulse at most once a minute. */
+  lastSeenAt: Date | null;
+  /** Whether friends see when they're here and typing. Off, they don't see anyone's either. */
+  showActive: boolean;
+  /** Who they're typing to and when they last did: typing while it's a few seconds old. One chat at a time. */
+  typingTo: mongoose.Types.ObjectId | null;
+  typingAt: Date | null;
   createdAt: Date;
 }
 
@@ -104,6 +111,10 @@ const UserSchema = new Schema<IUser>(
     companionHue: { type: Number, default: null, min: 1, max: 7 },
     focusMissionId: { type: Schema.Types.ObjectId, ref: "Mission", default: null },
     focusTheme: { type: String, enum: FOCUS_THEMES, default: "sea" },
+    lastSeenAt: { type: Date, default: null },
+    showActive: { type: Boolean, default: true },
+    typingTo: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    typingAt: { type: Date, default: null },
     createdAt: { type: Date, default: Date.now },
   },
   { timestamps: false }
