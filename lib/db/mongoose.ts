@@ -34,8 +34,12 @@ export async function connectDB() {
   }
   if (cached.conn) return cached.conn;
   if (!cached.promise) {
+    // A query made while the connection is still opening waits for it instead of throwing. Pages
+    // load in parallel, so on a cold instance a loader's first query can beat its connectDB (the
+    // People page failed exactly that way); the wait is capped, so an unreachable cluster still errors.
+    mongoose.set("bufferTimeoutMS", 8_000);
     cached.promise = mongoose.connect(MONGODB_URI, {
-      bufferCommands: false,
+      bufferCommands: true,
       // Serverless tuning: keep the pool small and fail fast instead of
       // hanging on unreachable clusters.
       maxPoolSize: 5,

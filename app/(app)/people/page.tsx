@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth/authOptions";
+import { connectDB } from "@/lib/db/mongoose";
 import { loadFeed, loadMe, loadPeople } from "@/lib/social/load";
 import { peopleYouFollow } from "@/lib/social/people";
 import type { PersonT } from "@/lib/types";
@@ -19,6 +20,8 @@ interface Loaded {
 
 async function load(viewerId: string, view: PeopleView): Promise<Loaded | null> {
   const find = view.tab === "find";
+  // Before anything runs in parallel, so no loader's first query comes ahead of the connection.
+  await connectDB();
   const [me, listed, filtered, feed, facets, following] = await Promise.all([
     loadMe(viewerId),
     // Unfiltered: suggestions for Find people.

@@ -84,6 +84,7 @@ Kata (型, "form, pattern") is a daily journal with a companion that checks in o
 
 - Mongo never changes an existing index, and mongoose doesn't tell anyone when it can't build one: change an index's rules in a schema and the database keeps the old ones until something fails for writers. `repairIndexes` (`lib/db/indexes.ts`) runs once per instance, from `connectDB`, and replaces an index that has the same keys and different rules; it leaves anything no schema mentions, and skips previews, which share the live database. A new model goes in its list.
 - `GET /api/health` says whether the database answers and its indexes match the code. Check it after a deploy that touches a schema.
+- Queries wait for the connection (`bufferCommands` on, up to `bufferTimeoutMS` 8s, in `lib/db/mongoose.ts`). Pages load in parallel, and on a cold instance a loader's first query can come before `connectDB` finishes: with buffering off that threw, and People said "can't reach the database" on the first visit after a quiet spell. Still `await connectDB()` before a page's parallel loads. A page's catch-all error says the database, so check the server log for the real error before believing it.
 - The live database is a free Atlas cluster, which pauses after long inactivity: its address then stops resolving (`querySrv ENOTFOUND`). The daily cron connects, which keeps it awake.
 
 ## Days and time
