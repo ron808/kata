@@ -191,7 +191,7 @@ export function BreakdownView({ b, today, tz, name, heading: Heading = "h2" }: {
             {moodAverage !== null ? (
               <div>
                 <p className="font-semibold">Mood: mostly {MOODS[Math.round(moodAverage) - 1] ?? "okay"}</p>
-                <p className="text-[0.875rem] text-ink/70">{plural(s.moods.length, "check-in")} · the taller, the brighter</p>
+                <p className="text-[0.875rem] text-ink/70">{plural(s.moods.length, "day")} with a mood · the taller, the brighter</p>
                 <div className="mt-2.5 max-w-[24rem]">
                   <DayBars
                     from={b.counted}

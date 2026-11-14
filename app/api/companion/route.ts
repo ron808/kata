@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { jsonError, requireUser } from "@/lib/api";
 import { checkLimit, limiters } from "@/lib/ratelimit/upstash";
 import { isGroqConfigured } from "@/lib/ai/groq";
-import { answerFreely, asksSomething, breakDown, busy, choose, converse, goTo, missionWords, statusNow, type MaruExchange, type Seen } from "@/lib/companion/brain";
+import { answerFreely, asksSomething, breakDown, busy, choose, converse, goTo, missionWords, patternsNow, statusNow, type MaruExchange, type Seen } from "@/lib/companion/brain";
 import { answer, answerStep, moodSaid, say } from "@/lib/companion/engine";
 import { companionError } from "@/lib/companion/http";
 import { loadCompanion } from "@/lib/companion/load";
@@ -29,7 +29,7 @@ export async function GET() {
  */
 async function talk(userId: string, text: string, seen: Seen): Promise<MaruExchange> {
   // Before breakdowns: in focus, "give me a report" means the mission.
-  const went = (await goTo(userId, text)) ?? (await missionWords(userId, text)) ?? (await breakDown(userId, text)) ?? (await statusNow(userId, text));
+  const went = (await goTo(userId, text)) ?? (await missionWords(userId, text)) ?? (await breakDown(userId, text)) ?? (await statusNow(userId, text)) ?? (await patternsNow(userId, text));
   if (went) return went;
   const mood = await moodSaid(userId, text);
   if (mood) return refreshing(mood);

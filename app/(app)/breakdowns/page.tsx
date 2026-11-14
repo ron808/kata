@@ -2,20 +2,30 @@ import { auth } from "@/lib/auth/authOptions";
 import { ensureWeekly, listBreakdowns } from "@/lib/breakdowns";
 import { contextFor } from "@/lib/companion/engine";
 import { namesFor } from "@/lib/companion/naming";
+import { loadPatterns } from "@/lib/patterns";
+import type { Patterns } from "@/lib/patterns/compute";
 import { AppPage, EmptyNote, PageHeader, Section } from "@/components/shared/AppPage";
 import { BreakdownList } from "@/components/breakdowns/BreakdownList";
 import { BreakdownView } from "@/components/breakdowns/BreakdownView";
 import { MakeBreakdown } from "@/components/breakdowns/MakeBreakdown";
+import { PatternsCard } from "@/components/breakdowns/Patterns";
 import type { BreakdownT } from "@/lib/types";
 
 export const metadata = { title: "Breakdowns · Kata" };
 
-async function load(userId: string): Promise<{ items: BreakdownT[]; today: string; tz: string } | null> {
+async function load(userId: string): Promise<{ items: BreakdownT[]; today: string; tz: string; patterns: Patterns | null } | null> {
   try {
     const ctx = await contextFor(userId);
     // Last week's comes the first time they look after it ends.
     await ensureWeekly(ctx).catch((err) => console.error("breakdowns:weekly", err));
-    return { items: await listBreakdowns(userId), today: ctx.day, tz: ctx.tz };
+    const [items, patterns] = await Promise.all([
+      listBreakdowns(userId),
+      loadPatterns(userId, ctx.tz, ctx.day).catch((err) => {
+        console.error("breakdowns:patterns", err);
+        return null;
+      }),
+    ]);
+    return { items, today: ctx.day, tz: ctx.tz, patterns };
   } catch (err) {
     console.error("breakdowns:load", err);
     return null;
@@ -31,7 +41,7 @@ export default async function BreakdownsPage() {
       <PageHeader
         kicker="How your time went"
         title="Breakdowns"
-        lede={`What got done, what’s stuck, your habits, numbers and moods, with a score out of 10. One comes every Monday for the week before. For any other stretch, pick it here or ask ${name}.`}
+        lede={`What got done, what’s stuck, your habits, numbers and moods, with a score out of 10. One comes every Monday for the week before. For any other stretch, pick it here or ask ${name}. Patterns, further down, show what went with your better and worse days.`}
       />
       {data ? (
         <div className="mt-8 grid grid-cols-1 gap-8">
@@ -41,6 +51,7 @@ export default async function BreakdownsPage() {
           ) : (
             <EmptyNote>No breakdowns yet. Pick a stretch above or ask {name}. Your first weekly one comes on Monday.</EmptyNote>
           )}
+          {data.patterns ? <PatternsCard p={data.patterns} name={name} /> : null}
           {earlier.length ? (
             <Section title="Earlier" id="earlier">
               <BreakdownList items={earlier} today={data.today} />

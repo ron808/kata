@@ -15,6 +15,8 @@ import { saidFor } from "./forms";
 import { insertDrafts } from "./messages";
 import { aboutScreen, screenOf, screenLines, type ScreenItem } from "./screen";
 import { focusedMission, missionLines, openMissions } from "@/lib/missions";
+import { loadPatterns, patternsReceipt } from "@/lib/patterns";
+import { patternsAsked, patternsReply } from "@/lib/patterns/compute";
 import { missionName, tally } from "@/lib/missions/core";
 import { whatAsked } from "@/lib/missions/said";
 import { listThreads } from "./threads";
@@ -73,6 +75,7 @@ Tools
 - Asked to plan their day or evening: two to four short lines from their threads, due and stuck first.
 - How a stretch of time went (a breakdown, report, recap or a score out of 10 for their week, month or any stretch): make_breakdown works it out from what they logged and keeps it. Never work it out yourself.
 - Missions are temporary lists with timers. A to-do list, or several things to get through today or over a stretch: start_mission, one string per task with any times in their words. mission_task changes a task, set_focus turns focus mode on or off, end_mission wraps one up or drops it, run_mission_again repeats one. When the facts say focus is on, they're heads down: what they say is about the mission's tasks, so change those with mission_task (stuck, done, a note), not threads; talk only about the mission, in one line, and bring up nothing else. Asked about something else, answer in a line.
+- What goes with their better or worse moods and energy (patterns) is worked out in code, on Breakdowns. Never claim a pattern yourself.
 - Kata sends nothing: no reminders, alarms or notifications. Never offer one.
 - Dates for tools are YYYY-MM-DD, from the calendar.
 - Their message comes with the facts: the clock, what you remember, their threads, the page and posts they're looking at, and what was said earlier today. The facts are current: if something said earlier today disagrees, the facts are right.
@@ -616,6 +619,24 @@ export async function statusNow(userId: string, raw: string): Promise<MaruExchan
   const created = await insertDrafts(ctx.userId, ctx.day, [
     { from: "you", kind: "note", text: said },
     { from: "kata", kind: "reply", text: statusText(active, ctx), choices: cards },
+  ]);
+  return { ctx, created: [...opened, ...created], actions: [] };
+}
+
+/**
+ * "What makes my days better?", "does walking help my mood?": worked out in code from what they
+ * logged (lib/patterns), with no model, so a pattern is never claimed that the days don't show.
+ * Not in focus. Null otherwise.
+ */
+export async function patternsNow(userId: string, raw: string): Promise<MaruExchange | null> {
+  const said = raw.trim().slice(0, 1000);
+  if (!patternsAsked(said)) return null;
+  const { ctx, created: opened } = await ensureToday(userId);
+  if (ctx.user.focusMissionId) return null;
+  const patterns = await loadPatterns(ctx.userId, ctx.tz, ctx.day);
+  const created = await insertDrafts(ctx.userId, ctx.day, [
+    { from: "you", kind: "note", text: said },
+    { from: "kata", kind: "reply", text: patternsReply(patterns, said), done: [patternsReceipt(patterns)] },
   ]);
   return { ctx, created: [...opened, ...created], actions: [] };
 }

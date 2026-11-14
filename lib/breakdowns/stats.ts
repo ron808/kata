@@ -5,6 +5,7 @@ import { Moment } from "@/lib/db/models/Moment";
 import { Reply } from "@/lib/db/models/Reply";
 import { Thread, type IThread, type ThreadStatus } from "@/lib/db/models/Thread";
 import { addDays, dateToDay, dayDiff, dayToDate, localDay } from "@/lib/companion/time";
+import { dayMoods } from "@/lib/patterns/compute";
 import type { BreakdownParts, BreakdownStats, BreakdownThread } from "@/lib/types";
 
 /*
@@ -22,7 +23,7 @@ export function emptyStats(): BreakdownStats {
 }
 
 /** The days a habit was done: the ones recorded, the run its streak ends on, and days it logged a number. */
-function habitDays(t: IThread, tz: string): Set<string> {
+export function habitDays(t: IThread, tz: string): Set<string> {
   const days = new Set(t.doneDays ?? []);
   if (t.streak > 0) {
     const last = localDay(tz, t.lastTouchedAt);
@@ -56,9 +57,10 @@ export async function gather(userId: string, tz: string, from: string, upTo: str
   const until = dayToDate(addDays(upTo, 2));
   const [threads, entries, moods, talked, moments, replies] = await Promise.all([
     Thread.find({ userId: id, archived: false }).lean<IThread[]>(),
+    // Only a page's own mood, of all it holds.
     Entry.find({ userId: id, date: { $gte: dayToDate(from), $lte: dayToDate(upTo) } })
-      .select("date wordCount")
-      .lean<{ date: Date; wordCount?: number }[]>(),
+      .select({ date: 1, wordCount: 1, fields: { $elemMatch: { type: "mood_slider" } } })
+      .lean<{ date: Date; wordCount?: number; fields?: { type: string; value?: unknown }[] }[]>(),
     CompanionMessage.find({ userId: id, from: "you", mood: { $ne: null }, day: { $gte: from, $lte: upTo } })
       .sort({ createdAt: 1 })
       .select("day mood")
@@ -76,8 +78,10 @@ export async function gather(userId: string, tz: string, from: string, upTo: str
     words += e.wordCount ?? 0;
   }
   pageDays.forEach((d) => active.add(d));
-  // The day's last answer.
-  const moodByDay = new Map(moods.map((m) => [m.day, m.mood]));
+  const moodByDay = dayMoods(
+    moods,
+    entries.map((e) => ({ day: dateToDay(e.date), fields: e.fields }))
+  );
   const posted = [...moments, ...replies].map((p) => dayOf(p.createdAt)).filter(inside);
   posted.forEach((d) => active.add(d));
 
