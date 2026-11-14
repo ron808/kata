@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { breakdownReceipt, ensureWeekly, toBreakdownT } from "@/lib/breakdowns";
 import { connectDB } from "@/lib/db/mongoose";
-import { CompanionMessage, type ICompanionMessage, type IQuickReply } from "@/lib/db/models/CompanionMessage";
+import { CompanionMessage, type IChoice, type ICompanionMessage, type IQuickReply, type IReceipt } from "@/lib/db/models/CompanionMessage";
 import { Entry, type IEntry } from "@/lib/db/models/Entry";
 import { THREAD_STATUSES, Thread, type IThread, type ThreadStatus } from "@/lib/db/models/Thread";
 import { User, type IUser } from "@/lib/db/models/User";
@@ -31,12 +31,11 @@ import {
   moodReply,
   openQuestion,
   salutation,
-  statusLine,
   type GreetingFacts,
 } from "./copy";
 import { CompanionError } from "./errors";
-import { habitGap } from "./fields";
-import { logChoice } from "./forms";
+import { habitRun } from "./fields";
+import { input, logChoice } from "./forms";
 import { companionNameOf, nicknameOf } from "./name";
 import { candidatesFromItems, splitList, statusIn, threadsFromText, threadsMentioned } from "./extract";
 import { insertDrafts, isDuplicateKey, messagesForDay, MOOD_REPLIES, stableId, type Draft } from "./messages";
@@ -49,11 +48,13 @@ import {
   liveStreak,
   logItem,
   saveThread,
+  stepChange,
   touch,
   withLog,
   type Applied,
   type Ctx,
 } from "./threads";
+import { stepSaid, stepsFor } from "./steps";
 import { addDays, dateToDay, dayToDate, localDay, validTimeZone, weekdayOf } from "./time";
 import { voiceCheckin } from "./voice";
 
@@ -154,8 +155,9 @@ async function greetingFacts(ctx: EngineCtx): Promise<GreetingFacts> {
 }
 
 async function checkinDraft(line: Line, thread: IThread, ctx: Ctx): Promise<Draft> {
-  // A thread that keeps numbers can be logged right from its check-in, with no model.
-  const log = logChoice(thread);
+  // A thread that keeps numbers can be logged right from its check-in, with no model. A habit's
+  // answer is Done, and the numbers come after it: one question, one control.
+  const log = thread.kind === "habit" ? null : logChoice(thread);
   return {
     from: "kata",
     kind: "checkin",
@@ -247,7 +249,8 @@ async function eveningCheckins(ctx: EngineCtx, messages: ICompanionMessage[]): P
   const open = (m: ICompanionMessage) => {
     const t = byId.get(String(m.threadId));
     if (!t) return false;
-    return t.kind === "habit" ? !(t.streak > 0 && localDay(ctx.tz, t.lastTouchedAt) === ctx.day) : m.answer !== "later";
+    // "said": they told the model about it in their own words, which settles it for the evening too.
+    return t.kind === "habit" ? !(t.streak > 0 && localDay(ctx.tz, t.lastTouchedAt) === ctx.day) : m.answer !== "later" && m.answer !== "said";
   };
   const morning = messages.filter((m) => m.from === "kata" && m.kind === "checkin" && m.threadId && open(m));
   const seed = seedFor(ctx, "evening-checkin");
@@ -292,101 +295,127 @@ function isStatus(value: string): value is ThreadStatus {
   return (THREAD_STATUSES as readonly string[]).includes(value);
 }
 
-function doneLine(t: IThread, chosen: IQuickReply, seed: number): Pick<Draft, "kind" | "text" | "replies"> {
-  if (t.kind === "event" && chosen.label === "It was rough") return { kind: "reply", text: followUp.rough };
-  if (t.shared) return { kind: "question", text: followUp.doneShare(ref(t), seed), replies: SHARE_REPLIES };
-  // Done doesn't say how it went: only "It went well" does.
-  if (t.kind === "event") return { kind: "question", text: chosen.label === "It went well" ? followUp.wentWell : followUp.eventDone };
-  return { kind: "question", text: followUp.done(ref(t), seed) };
+/** What happened to a thread, as a receipt that opens it. */
+function threadReceipt(t: IThread, text: string, detail = ""): IReceipt {
+  return { kind: "thread", text: text.slice(0, 80), detail: detail.slice(0, 240), href: `/threads?t=${String(t._id)}`, hue: t.hue ?? null };
 }
 
-/** Applies a chosen reply to the thread and returns Kata's follow-up. */
+/** One line to write down on a thread (what's in the way, the next step), saved by update_thread. */
+function lineForm(t: IThread, key: "note" | "next_step", label: string, placeholder: string, value = ""): IChoice {
+  return {
+    label,
+    detail: "",
+    kind: "thread",
+    tool: "update_thread",
+    args: { thread: t.title },
+    editable: false,
+    public: false,
+    inputs: [input(key, label, "text", { required: true, placeholder, value: value.slice(0, 300) })],
+    action: "Save",
+  };
+}
+
+/** How a habit's run stands after today: "Day one", "4-day streak". */
+function runDetail(t: IThread, ctx: Ctx, counted: boolean): string {
+  if (!counted) return "Already counted today";
+  const run = liveStreak(t, ctx);
+  if (run > 1) return habitRun(run, t.title);
+  return (t.doneDays ?? []).length <= 1 ? "Day one" : "";
+}
+
+/**
+ * Applies a chosen reply to the thread and says what happened, all of it from code: a receipt
+ * for what changed, a line only when it adds something, and a form where there's something
+ * worth writing down (what's in the way, on whom, the next step), never a question left open.
+ */
 async function threadReply(ctx: EngineCtx, t: IThread, chosen: IQuickReply, said: string): Promise<Draft> {
   const seed = seedFor(ctx, "follow", String(t._id), chosen.value);
   const base = { from: "kata" as const, threadId: t._id };
-  const r = ref(t);
 
   if (chosen.value === "share") {
     const posted = await shareMoment(ctx.userId, { kind: "milestone", text: `Finished: ${t.title}`, tags: [], visibility: "public", threadTitle: t.title });
     if (!posted.ok) return { ...base, kind: "reply", text: NEEDS_PROFILE };
     await saveThread(ctx, t._id, { log: withLog(t.log, logItem("Shared on your profile", null, "kata", ctx.now)) });
-    return { ...base, kind: "question", text: followUp.shared };
+    return { ...base, kind: "reply", text: "", done: [threadReceipt(t, "Shared on your profile", `Finished: ${t.title}`)] };
   }
-  if (chosen.value === "keep") return { ...base, kind: "question", text: followUp.kept };
+  if (chosen.value === "keep") return { ...base, kind: "reply", text: followUp.kept };
   if (chosen.value === "later") return { ...base, kind: "reply", text: chosen.label === "Not yet" ? followUp.notYet : followUp.later(seed) };
   if (!isStatus(chosen.value)) return { ...base, kind: "reply", text: ack.noted(seed) };
   const status = chosen.value;
 
-  if (t.kind === "habit") {
-    if (status === "done") {
-      const did = habitDone(t, ctx);
-      const after = did ? await saveThread(ctx, t._id, { ...did, log: withLog(t.log, logItem(said, null, "you", ctx.now)) }) : t;
-      const done = after ?? t;
-      return { ...base, kind: "reply", text: followUp.habit(done.streak, (done.doneDays ?? []).length <= 1, seed, habitGap(t.title) > 1) };
-    }
-    if (status === "paused") {
-      await saveThread(ctx, t._id, { status, log: withLog(t.log, logItem(said, status, "you", ctx.now)) });
-      return { ...base, kind: "reply", text: followUp.paused };
-    }
-  }
-
-  const changed = status !== t.status;
+  // Ticking off the next step keeps it moving; anything else is a step, set the one way steps are set everywhere.
   const stepDone = chosen.label === STEP_DONE.label && chosen.value === STEP_DONE.value && Boolean(t.nextStep);
-  const set: Partial<IThread> = {
-    // A habit's lastTouchedAt is the last day it was done: saying where it stands doesn't count.
-    ...(t.kind === "habit" ? {} : touch(t, ctx)),
-    log: withLog(t.log, logItem(stepDone ? `Done: ${t.nextStep}` : said, changed ? status : null, "you", ctx.now)),
-  };
-  if (changed) {
-    set.status = status;
-    set.lastNote = status === "done" || status === "paused" ? said : "";
+  const set: Partial<IThread> = stepChange(t, status, ctx, "", said) ?? {};
+  if (stepDone) {
+    Object.assign(set, touch(t, ctx), { nextStep: "", log: withLog(set.log ?? t.log, logItem(`Done: ${t.nextStep}`, null, "you", ctx.now)) });
   }
-  if (status === "done" || stepDone) set.nextStep = "";
-  const after = (await saveThread(ctx, t._id, set)) ?? t;
+  const after = Object.keys(set).length ? ((await saveThread(ctx, t._id, set)) ?? t) : t;
+  const done = (detail = "") => [threadReceipt(after, stepSaid(after, status), detail)];
 
+  if (after.kind === "habit" && status === "done") {
+    const log = logChoice(after);
+    return { ...base, kind: "reply", text: "", done: done(runDetail(after, ctx, "doneDays" in set)), choices: log ? [log] : [] };
+  }
   switch (status) {
     case "done":
-      return { ...base, ...doneLine(after, chosen, seed) };
+      if (after.kind === "event" && chosen.label === "It was rough") return { ...base, kind: "reply", text: followUp.rough, done: done() };
+      if (after.kind === "event" && chosen.label === "It went well") return { ...base, kind: "reply", text: followUp.wentWell, done: done() };
+      if (after.shared) return { ...base, kind: "question", text: followUp.doneShare, replies: SHARE_REPLIES, done: done() };
+      return { ...base, kind: "reply", text: followUp.done(seed), done: done() };
     case "moving": {
       const due = after.kind === "event" ? dueIn(after, ctx) : null;
+      const ticked = stepDone ? [threadReceipt(after, `Done: ${stepText(t.nextStep)}`, after.title)] : done();
       // Finishing the prep for an event isn't finishing the event.
-      if (stepDone && due !== null && due >= 0) return { ...base, kind: "reply", text: followUp.prepDone(due === 0 ? "today" : weekdayOf(addDays(ctx.day, due))) };
-      if (stepDone) return { ...base, kind: "question", text: followUp.stepDone(r), replies: [LAST_STEP] };
-      if (after.kind === "health" || after.kind === "person") return { ...base, kind: "reply", text: followUp.better };
-      if (due === 0) return { ...base, kind: "reply", text: followUp.eventToday };
-      if (due !== null && due > 0) return { ...base, kind: "question", text: followUp.eventSoon(weekdayOf(addDays(ctx.day, due))) };
-      return { ...base, kind: "question", text: followUp.moving(r, seed) };
+      if (stepDone && due !== null && due >= 0) return { ...base, kind: "reply", text: followUp.prepDone(due === 0 ? "today" : weekdayOf(addDays(ctx.day, due))), done: ticked };
+      if (after.kind === "health" || after.kind === "person") return { ...base, kind: "reply", text: followUp.better, done: ticked };
+      if (due === 0) return { ...base, kind: "reply", text: followUp.eventToday, done: ticked };
+      if (due !== null && due > 0) return { ...base, kind: "reply", text: followUp.eventSoon(weekdayOf(addDays(ctx.day, due))), done: ticked };
+      // Where it goes next is worth writing down: a form to fill in if they like.
+      if (!NEXT_STEP_KINDS.has(after.kind) || after.nextStep) return { ...base, kind: "reply", text: "", done: ticked };
+      return {
+        ...base,
+        kind: "question",
+        text: "",
+        done: ticked,
+        choices: [lineForm(after, "next_step", `Next step on ${after.title}`, "Send the draft to Sam")],
+        ...(stepDone ? { replies: [LAST_STEP] } : {}),
+      };
     }
     case "stuck":
       return {
         ...base,
         kind: "question",
-        text: after.kind === "health" ? followUp.healthStuck : followUp.stuck(!changed && Boolean(t.lastNote)),
+        text: "",
+        done: done(),
+        // Still stuck: what it was stuck on, to keep or change. Newly stuck: the old note was about something else.
+        choices: [lineForm(after, "note", after.kind === "health" ? "What would help?" : "What’s in the way?", "Waiting on access, not sure where to start", t.status === "stuck" ? t.lastNote : "")],
       };
     case "waiting":
       // "Waiting on them" about a person already says on whom.
-      return (!changed && t.lastNote) || after.kind === "person"
-        ? { ...base, kind: "reply", text: followUp.waitingKnown }
-        : { ...base, kind: "question", text: followUp.waiting };
+      if (after.kind === "person" || (status === t.status && t.lastNote)) return { ...base, kind: "reply", text: followUp.waitingKnown, done: done(t.lastNote) };
+      return { ...base, kind: "question", text: followUp.waitingKnown, done: done(), choices: [lineForm(after, "note", "Waiting on whom?", "Sam, the bank, a reply")] };
     case "paused":
-      return { ...base, kind: "reply", text: followUp.paused };
+      // "It didn't happen" about an event isn't a pause.
+      if (after.kind === "event") return { ...base, kind: "reply", text: followUp.paused, done: [threadReceipt(after, `${after.title} didn’t happen`)] };
+      return { ...base, kind: "reply", text: followUp.paused, done: done() };
   }
 }
 
-/** Records the writer's reply to a Kata message (in their words) and writes Kata's follow-up. */
+/**
+ * Records the writer's tap on a Kata message and writes Kata's follow-up. Their side says which
+ * thread it was about ("Finish scrapers: Done"), so two answers in a row can't read the same.
+ */
 async function respond(ctx: EngineCtx, msg: ICompanionMessage, chosen: IQuickReply, said: string): Promise<ICompanionMessage[]> {
   const mood = (msg.kind === "mood" || msg.kind === "nudge") && /^[1-5]$/.test(chosen.value) ? Number(chosen.value) : null;
-  const you: Draft = { from: "you", kind: "reply", text: said, threadId: msg.threadId, mood };
+  const thread = mood === null && msg.threadId ? await Thread.findOne({ _id: msg.threadId, userId: ctx.userId, archived: false }).lean<IThread>() : null;
+  const you: Draft = { from: "you", kind: "reply", text: thread ? `${thread.title}: ${said}` : said, threadId: msg.threadId, mood };
   let kata: Draft;
   if (mood !== null) {
     // The time they answer, not the time it was asked: a morning question tapped at night gets a night reply.
     const evening = msg.kind === "nudge" || isEvening(ctx.hour);
     kata = { from: "kata", kind: "reply", text: moodReply(mood, evening, seedFor(ctx, "mood-reply", String(msg._id))) };
   } else if (msg.threadId) {
-    const thread = await Thread.findOne({ _id: msg.threadId, userId: ctx.userId }).lean<IThread>();
-    kata = thread
-      ? await threadReply(ctx, thread, chosen, said)
-      : { from: "kata", kind: "reply", text: followUp.gone, threadId: msg.threadId };
+    kata = thread ? await threadReply(ctx, thread, chosen, said) : { from: "kata", kind: "reply", text: followUp.gone, threadId: msg.threadId };
   } else {
     kata = { from: "kata", kind: "reply", text: ack.noted(seedFor(ctx, "noted", String(msg._id))) };
   }
@@ -411,10 +440,55 @@ export async function answer(userId: string, messageId: string, value: string): 
   const { ctx } = today;
   const msg = await CompanionMessage.findOne({ _id: messageId, userId, from: "kata" }).lean<ICompanionMessage>();
   if (!msg) throw new CompanionError("Not found", 404);
-  const chosen = msg.replies.find((r) => r.value === value);
-  if (!chosen) throw new CompanionError("That isn't one of the replies on offer.", 400);
+  // "Not now" works on any check-in, whatever answers it offers.
+  const chosen = msg.replies.find((r) => r.value === value) ?? (value === "later" && msg.kind === "checkin" ? NOT_NOW : undefined);
+  if (!chosen) throw new CompanionError("That isn’t one of the answers on offer.", 400);
+  // A mood belongs to its day: yesterday's question tapped after the day turned doesn't count for today.
+  if (msg.day !== ctx.day && (msg.kind === "mood" || msg.kind === "nudge")) throw new CompanionError("That was yesterday’s question.", 409);
+  if (msg.kind === "checkin" && msg.threadId && value !== "later") {
+    const settled = settledSince(await Thread.findOne({ _id: msg.threadId, userId: ctx.userId }).lean<IThread>(), value, ctx);
+    if (settled) throw new CompanionError(settled, 409);
+  }
   await claim(ctx, msg, value);
   return { ctx, created: [...today.created, ...(await respond(ctx, msg, chosen, chosen.label))] };
+}
+
+const NOT_NOW: IQuickReply = { label: "Not now", value: "later" };
+
+/**
+ * Why a check-in can't be answered any more: what it asked about has been settled some other way
+ * since (done on its card, paused, archived, today already counted). An old question never
+ * reopens or recounts anything. Null when it can still be answered.
+ */
+export function settledSince(t: IThread | null, value: string, ctx: Ctx): string | null {
+  if (!t || t.archived) return followUp.gone;
+  if (t.status === "done") return `${t.title} is already done.`;
+  if (t.status === "paused") return `${t.title} is paused.`;
+  if (t.kind === "habit" && value === "done" && !habitDone(t, ctx)) return `${t.title} is already done today.`;
+  return null;
+}
+
+/**
+ * The writer set a thread's step from its card in the conversation: the same rule and the same
+ * follow-up as a check-in answer, from one of the thread's own steps. The message isn't answered,
+ * so any other thread on it can still be set.
+ */
+export async function answerStep(userId: string, messageId: string, threadId: string, step: ThreadStatus): Promise<Exchange> {
+  if (!mongoose.isObjectIdOrHexString(messageId) || !mongoose.isObjectIdOrHexString(threadId)) throw new CompanionError("Not found", 404);
+  const today = await ensureToday(userId);
+  const { ctx } = today;
+  const msg = await CompanionMessage.findOne({ _id: messageId, userId, from: "kata" }).lean<ICompanionMessage>();
+  if (!msg) throw new CompanionError("Not found", 404);
+  if (!msg.choices.some((c) => c.tool === "thread" && c.args?.id === threadId)) throw new CompanionError("That thread isn’t on this message.", 400);
+  const t = await Thread.findOne({ _id: threadId, userId: ctx.userId, archived: false }).lean<IThread>();
+  if (!t) throw new CompanionError(followUp.gone, 404);
+  const label = stepsFor(t.kind).find((s) => s.value === step)?.label;
+  if (!label) throw new CompanionError("That isn’t a step for this thread.", 400);
+  // Where it already is: nothing to say.
+  if (!stepChange(t, step, ctx)) return { ctx, created: today.created };
+  const kata = await threadReply(ctx, t, { label, value: step }, label);
+  const created = await insertDrafts(ctx.userId, ctx.day, [{ from: "you", kind: "reply", text: `${t.title}: ${label}`, threadId: t._id }, kata]);
+  return { ctx, created: [...today.created, ...created] };
 }
 
 // ── Free text ────────────────────────────────────────────────────────────────
@@ -581,14 +655,16 @@ async function general(ctx: EngineCtx, messages: ICompanionMessage[], text: stri
     source: "kata",
   });
   const parts: string[] = [];
-  let ask: Pick<Draft, "text" | "replies" | "threadId"> | null = null;
+  const done: IReceipt[] = [];
+  // At most one thing to follow up on: a form, or a yes-or-no with its buttons.
+  let ask: Pick<Draft, "text" | "replies" | "choices" | "threadId"> | null = null;
   if (applied.created.length) parts.push(ack.tracking(joinList(applied.created.slice(0, 3).map(ref)), seed));
 
   const mentioned: IThread[] = [];
   for (const { before, after } of applied.updated) {
     if (after.kind === "habit") {
       // A habit's touchCount only moves when it's done for the day.
-      if (after.touchCount !== before.touchCount) parts.push(followUp.habit(liveStreak(after, ctx), (after.doneDays ?? []).length <= 1, seed, habitGap(after.title) > 1));
+      if (after.touchCount !== before.touchCount) done.push(threadReceipt(after, stepSaid(after, "done"), runDetail(after, ctx, true)));
       else mentioned.push(after);
       continue;
     }
@@ -596,20 +672,17 @@ async function general(ctx: EngineCtx, messages: ICompanionMessage[], text: stri
       mentioned.push(after);
       continue;
     }
+    done.push(threadReceipt(after, stepSaid(after, after.status), after.status === "stuck" || after.status === "waiting" ? after.lastNote : ""));
     if (after.status === "done") {
-      if (!ask) {
-        const line = doneLine(after, { label: "", value: "done" }, seed);
-        ask = { text: line.text, replies: line.replies, threadId: after._id };
-      }
+      if (!ask && after.shared) ask = { text: followUp.doneShare, replies: SHARE_REPLIES, threadId: after._id };
       continue;
     }
-    parts.push(statusLine(ref(after), after.status, after.lastNote && isShortPhrase(after.lastNote) ? noteText(after.lastNote) : ""));
-    if (!ask && after.status === "stuck" && !after.lastNote) ask = { text: followUp.stuck(false), threadId: after._id };
-    if (!ask && after.status === "waiting" && !after.lastNote) ask = { text: followUp.waiting, threadId: after._id };
+    if (!ask && after.status === "stuck" && !after.lastNote) ask = { text: "", choices: [lineForm(after, "note", "What’s in the way?", "Waiting on access, not sure where to start")], threadId: after._id };
+    if (!ask && after.status === "waiting" && !after.lastNote) ask = { text: "", choices: [lineForm(after, "note", "Waiting on whom?", "Sam, the bank, a reply")], threadId: after._id };
   }
-  if (!parts.length && !ask && mentioned.length) parts.push(ack.added(joinList(mentioned.slice(0, 2).map(ref))));
+  if (!parts.length && !done.length && !ask && mentioned.length) parts.push(ack.added(joinList(mentioned.slice(0, 2).map(ref))));
 
-  if (!parts.length && !ask) {
+  if (!parts.length && !done.length && !ask) {
     const words = text.split(/\s+/).length;
     let line: string = ack.noted(seed);
     if (words <= 4 && /^(?:hi|hello|hey|morning|good morning|evening|good evening)\b/i.test(text)) line = ack.hello(ctx.first);
@@ -626,16 +699,18 @@ async function general(ctx: EngineCtx, messages: ICompanionMessage[], text: stri
   }
 
   const involved = [...applied.created, ...applied.updated.map((u) => u.after)];
-  // One thing named and nothing else to ask: ask for its next step, so Kata has something to follow up on.
+  // One thing named and nothing else to ask: its next step is worth writing down, so Kata has something to follow up on.
   const only = involved.length === 1 ? involved[0] : null;
   if (!ask && only && only.status === "moving" && !only.nextStep && NEXT_STEP_KINDS.has(only.kind)) {
-    ask = { text: followUp.nextStepOnIt, threadId: only._id };
+    ask = { text: "", choices: [lineForm(only, "next_step", `Next step on ${only.title}`, "Send the draft to Sam")], threadId: only._id };
   }
   return {
     from: "kata",
     kind: ask ? "question" : "reply",
     text: [...parts, ask?.text].filter(Boolean).join(" "),
+    done,
     replies: ask?.replies ?? [],
+    choices: ask?.choices ?? [],
     threadId: ask?.threadId ?? (involved.length === 1 ? involved[0]._id : null),
   };
 }

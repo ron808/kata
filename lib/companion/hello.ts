@@ -48,7 +48,7 @@ async function helloDraft(ctx: EngineCtx, messages: ICompanionMessage[]): Promis
       text: `${hi} ${name} has ${count(left)} thing${left === 1 ? "" : "s"} left. Bring ${left === 1 ? "it" : "them"} to today?`,
       choices: [
         { label: left === 1 ? "Bring it over" : "Bring them over", detail: "", kind: "mission", tool: "carry_mission", args: { mission: String(stale._id) }, editable: false, public: false, inputs: [], action: "" },
-        { label: "Wrap it up", detail: "", kind: "mission", tool: "end_mission", args: { how: "finish", mission: name }, editable: false, public: false, inputs: [], action: "" },
+        { label: "Wrap it up", detail: "", kind: "mission", tool: "end_mission", args: { how: "finish", mission: String(stale._id) }, editable: false, public: false, inputs: [], action: "" },
       ],
     };
   }
@@ -62,7 +62,7 @@ async function helloDraft(ctx: EngineCtx, messages: ICompanionMessage[]): Promis
       ...base,
       kind: "question",
       text: `${hi} ${whereWeAre(toMissionT(m, ctx), ctx.now.getTime())} Back to it?`,
-      choices: [{ label: "Turn on focus", detail: up ? up.title : name, kind: "mission", tool: "set_focus", args: { on: true, mission: name }, editable: false, public: false, inputs: [], action: "" }],
+      choices: [{ label: "Turn on focus", detail: up ? up.title : name, kind: "mission", tool: "set_focus", args: { on: true, mission: String(m._id) }, editable: false, public: false, inputs: [], action: "" }],
     };
   }
 
@@ -83,7 +83,7 @@ async function helloDraft(ctx: EngineCtx, messages: ICompanionMessage[]): Promis
   const planned = chooseCheckins(threads, ctx, await historyFor(ctx)).find((p) => !askedToday.has(String(p.thread._id)));
   if (planned) {
     const line = checkinLine(planned, ctx, seed, isEvening(ctx.hour));
-    const log = logChoice(planned.thread);
+    const log = planned.thread.kind === "habit" ? null : logChoice(planned.thread);
     return { ...base, kind: "checkin", text: `${hi} ${line.text}`, threadId: planned.thread._id, replies: line.replies, choices: log ? [log] : [] };
   }
 

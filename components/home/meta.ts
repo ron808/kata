@@ -1,6 +1,7 @@
 import { habitGap, habitRun, valueText } from "@/lib/companion/fields";
+import { doneToday } from "@/lib/companion/steps";
 import { dayDiff, localDay, monthDayOf, weekdayOf } from "@/lib/companion/time";
-import type { ThreadStatus, ThreadT } from "@/lib/types";
+import type { ThreadT } from "@/lib/types";
 
 const n = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 
@@ -20,44 +21,13 @@ export function touchedPhrase(iso: string, today: string, tz: string): string {
   return "A while back";
 }
 
-const doneToday = (t: ThreadT, today: string, tz: string) => t.streak > 0 && localDay(tz, new Date(t.lastTouchedAt)) === today;
-
-/** What someone can say about a thread. A habit is done today or it isn't, and a person is never done. */
-export function stepsFor(kind: ThreadT["kind"]): { value: ThreadStatus; label: string }[] {
-  if (kind === "habit") {
-    return [
-      { value: "moving", label: "Going" },
-      { value: "done", label: "Done today" },
-      { value: "paused", label: "Paused" },
-    ];
-  }
-  if (kind === "person") {
-    return [
-      { value: "moving", label: "All good" },
-      { value: "waiting", label: "Waiting" },
-      { value: "paused", label: "Paused" },
-    ];
-  }
-  return [
-    { value: "moving", label: "Moving" },
-    { value: "stuck", label: "Stuck" },
-    { value: "waiting", label: "Waiting" },
-    { value: "done", label: "Done" },
-    { value: "paused", label: "Paused" },
-  ];
-}
+export { stepOn, stepsFor } from "@/lib/companion/steps";
 
 /** "Moving" says nothing about a habit or a person, so only their other states are worth a badge. */
 export const showsStatus = (t: ThreadT) => t.status !== "moving" || (t.kind !== "habit" && t.kind !== "person");
 
-/** Which of those it's on now. */
-export function stepOn(t: ThreadT, step: ThreadStatus, today: string, tz: string): boolean {
-  if (t.kind !== "habit" || t.status === "paused") return t.status === step;
-  return step === "done" ? doneToday(t, today, tz) : step === "moving" && !doneToday(t, today, tz);
-}
-
 /** A few words about a thread for the map and its cards: a due day, a streak, how long it's been stuck. */
-export function threadMeta(t: ThreadT, today: string, tz: string): string {
+export function threadMeta(t: ThreadT, today: string, tz: string, { due: said = false }: { due?: boolean } = {}): string {
   if (t.status === "done") return "Done";
   if (t.status === "paused") return "Paused";
   if (t.status === "stuck" || t.status === "waiting") {
@@ -65,14 +35,16 @@ export function threadMeta(t: ThreadT, today: string, tz: string): string {
     const word = t.status === "stuck" ? "Stuck" : "Waiting";
     return d <= 0 ? `${word} since today` : `${word} ${n(d, "day")}`;
   }
-  if (t.dueAt) {
+  // A habit goes by its rhythm, not a date.
+  if (t.dueAt && t.kind !== "habit") {
     const due = t.dueAt.slice(0, 10);
     const d = dayDiff(due, today);
-    if (d < 0) return `Was ${monthDayOf(due)}`;
-    if (d === 0) return "Today";
-    if (d === 1) return "Tomorrow";
-    if (d < 7) return weekdayOf(due);
-    return `In ${d} days`;
+    // On the map the date sits under the name; in a sentence-sized place it says what it is.
+    if (d < 0) return `${said ? "Was due" : "Was"} ${monthDayOf(due)}`;
+    if (d === 0) return said ? "Due today" : "Today";
+    if (d === 1) return said ? "Due tomorrow" : "Tomorrow";
+    if (d < 7) return said ? `Due ${weekdayOf(due)}` : weekdayOf(due);
+    return said ? `Due in ${d} days` : `In ${d} days`;
   }
   if (t.kind === "habit") {
     const alive = dayDiff(today, localDay(tz, new Date(t.lastTouchedAt))) <= habitGap(t.title) && t.streak > 1;
@@ -92,8 +64,8 @@ export function todayLine(t: ThreadT, today: string): string {
 }
 
 /** threadMeta with today's numbers, which say "today" better than "Today" does. */
-export function metaWithToday(t: ThreadT, today: string, tz: string): string {
-  const meta = threadMeta(t, today, tz);
+export function metaWithToday(t: ThreadT, today: string, tz: string, opts: { due?: boolean } = {}): string {
+  const meta = threadMeta(t, today, tz, opts);
   const line = todayLine(t, today);
   return line ? (meta === "Today" || meta === "Came up today" ? line : `${meta} · ${line}`) : meta;
 }

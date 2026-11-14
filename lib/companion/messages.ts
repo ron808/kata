@@ -112,6 +112,7 @@ export function toKataMessage(m: ICompanionMessage): KataMessage {
       })),
       action: c.action ?? "",
       max: c.max ?? 0,
+      thread: c.tool === "thread" && typeof c.args?.id === "string" ? c.args.id : null,
     })),
     createdAt: new Date(m.createdAt).toISOString(),
   };

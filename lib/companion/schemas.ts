@@ -39,6 +39,13 @@ export const CompanionPostSchema = z.union([
     focus: Id.optional(),
   }),
   z.object({
+    /** A step tapped on a thread's card in the conversation (answerStep). */
+    messageId: z.string().min(1).max(40),
+    thread: Id,
+    step: z.enum(["moving", "stuck", "waiting", "done", "paused"]),
+    where: Where,
+  }),
+  z.object({
     text: z.string().trim().min(1).max(1000),
     where: Where,
     /** The posts in view, in screen order. The server decides whether this turn is about them. */

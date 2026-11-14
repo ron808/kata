@@ -11,7 +11,7 @@ import type { ThreadT } from "@/lib/types";
 import type { KnownThread, ThreadCandidate } from "./extract";
 import { FIELDS_MAX, fieldKey, habitGap, type FieldSpec } from "./fields";
 import { isDuplicateKey } from "./messages";
-import { dateToDay, dayDiff, localDay } from "./time";
+import { addDays, dateToDay, dayDiff, localDay } from "./time";
 
 export interface Ctx {
   userId: string;
@@ -54,6 +54,58 @@ export function habitDone(t: Pick<IThread, "title" | "streak" | "lastTouchedAt" 
     touchCount: t.touchCount + 1,
     doneDays: [...(t.doneDays ?? []), day].sort().slice(-400),
   };
+}
+
+/**
+ * Today taken back from a habit ("Going" after "Done today"): the run goes back to where it
+ * was. Null when today wasn't counted.
+ */
+export function habitUndone(t: Pick<IThread, "streak" | "lastTouchedAt" | "touchCount" | "doneDays">, ctx: Ctx) {
+  const days = t.doneDays ?? [];
+  const counted = days.includes(ctx.day) || (t.streak > 0 && localDay(ctx.tz, t.lastTouchedAt) === ctx.day);
+  if (!counted) return null;
+  const left = days.filter((d) => d !== ctx.day);
+  // The run today joined ended on its last day done. A run older than the days kept ended within
+  // its rest, or today wouldn't have joined it: yesterday keeps it as alive as it was.
+  const before = left.at(-1) ?? (t.streak > 1 ? addDays(ctx.day, -1) : undefined);
+  return {
+    doneDays: left,
+    streak: before ? Math.max(0, t.streak - 1) : 0,
+    lastTouchedAt: before ? new Date(ctx.now.getTime() - dayDiff(ctx.day, before) * DAY_MS) : t.lastTouchedAt,
+    touchCount: Math.max(0, t.touchCount - 1),
+  };
+}
+
+/**
+ * A thread set to a step, wherever it's set: its card, the Threads page, a check-in, the
+ * conversation, Maru. One rule, so the same tap does the same thing everywhere. On a habit
+ * Done counts today and Going takes it back, and only Paused changes its status; on anything
+ * else the step is its status, and Done clears the next step. `note` is where it stands now (what
+ * it's stuck on); `said`, the words that go in its log. Null when nothing would change.
+ */
+export function stepChange(t: IThread, step: ThreadStatus, ctx: Ctx, note = "", said = note): Partial<IThread> | null {
+  const set: Partial<IThread> = {};
+  if (t.kind === "habit") {
+    if (step === "stuck" || step === "waiting") return null;
+    const status: ThreadStatus = step === "paused" ? "paused" : "moving";
+    if (status !== t.status) {
+      set.status = status;
+      set.log = withLog(t.log, logItem(said, status, "you", ctx.now));
+    }
+    if (step === "done") Object.assign(set, habitDone(t, ctx) ?? {});
+    if (step === "moving" && t.status !== "paused") Object.assign(set, habitUndone(t, ctx) ?? {});
+    if (note) set.lastNote = note;
+    return Object.keys(set).length ? set : null;
+  }
+  const changed = step !== t.status;
+  if (!changed && !note) return null;
+  if (changed) {
+    set.status = step;
+    set.lastNote = note;
+    if (step === "done") set.nextStep = "";
+  } else set.lastNote = note;
+  set.log = withLog(t.log, logItem(said, changed ? step : null, "you", ctx.now));
+  return { ...set, ...touch(t, ctx) };
 }
 
 export function touch(t: Pick<IThread, "touchCount">, ctx: Ctx) {

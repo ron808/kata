@@ -39,7 +39,7 @@ export function HomeBoard({
       {/* On desktop the chat is exactly as tall as the map beside it: height 0 keeps it out of
           the row's sizing, min-height 100% fills the row. It scrolls inside instead of growing. */}
       <div className="flex min-w-0 flex-col lg:col-span-7 lg:h-0 lg:min-h-full">
-        <Conversation initial={messages} onThreads={setThreads} checkInLine={checkInLine} moodWeek={moodWeek} today={today} ai={ai} />
+        <Conversation initial={messages} threads={threads} tz={tz} onThreads={setThreads} checkInLine={checkInLine} moodWeek={moodWeek} today={today} ai={ai} />
       </div>
       <div className="min-w-0 lg:col-span-5">
         <MindCard threads={threads} today={today} tz={tz} onChange={update} />

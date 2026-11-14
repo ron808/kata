@@ -9,9 +9,12 @@ import { ASK_EVENT, HELLO_EVENT, REPLIED_EVENT, useCompanion, type Focus, type R
 import { postsInView } from "@/components/shared/screen";
 import { setTheme } from "@/components/shared/ThemeToggle";
 import { useToast } from "@/components/shared/Toast";
+import { MoodDots } from "@/components/entry/fields/meters";
+import { CheckIn, ThreadPiece } from "@/components/maru/Pieces";
 import { saidFor } from "@/lib/companion/forms";
+import { MOOD_STEPS } from "@/lib/companion/steps";
 import type { ClientAction } from "@/lib/companion/tools";
-import type { KataMessage, ThreadT } from "@/lib/types";
+import type { KataMessage, ThreadStatus, ThreadT } from "@/lib/types";
 import { Choices, Receipts } from "./Work";
 
 // Short to fit one row in the panel; each says the whole request.
@@ -21,7 +24,7 @@ const PROMPTS: [label: string, says: string][] = [
   ["Remind me", "Remind me to reply to this later"],
 ];
 
-const MOOD_LABELS = ["Foggy", "Low", "Okay", "Good", "Bright"];
+const MOOD_LABELS = MOOD_STEPS.map((s) => s.label);
 
 const isHello = (m: KataMessage) => m.hello === true;
 
@@ -30,15 +33,10 @@ function asksMood(m: KataMessage) {
   return m.kind === "mood" || (m.replies.length === 5 && m.replies.every((r) => /^[1-5]$/.test(r.value)));
 }
 
-/** Five steps drawn as dots, so moods don't lean on emoji. */
-function MoodDots({ value }: { value: number }) {
-  return (
-    <span aria-hidden className="inline-flex gap-[3px]">
-      {[1, 2, 3, 4, 5].map((i) => (
-        <span key={i} className="h-[5px] w-[5px] rounded-full bg-current" style={{ opacity: i <= value ? 1 : 0.22 }} />
-      ))}
-    </span>
-  );
+/** The threads a message puts on screen as themselves: its check-in's, and the ones it offers. */
+function piecesOf(m: KataMessage): string[] {
+  if (m.from !== "kata") return [];
+  return [...(m.kind === "checkin" && m.threadId ? [m.threadId] : []), ...m.choices.flatMap((c) => (c.thread ? [c.thread] : []))];
 }
 
 /**
@@ -50,6 +48,8 @@ function MoodDots({ value }: { value: number }) {
  */
 export function Conversation({
   initial,
+  threads,
+  tz,
   onThreads,
   checkInLine,
   moodWeek,
@@ -60,7 +60,10 @@ export function Conversation({
   initialFocus,
 }: {
   initial: KataMessage[];
-  onThreads?: (threads: ThreadT[]) => void;
+  /** The threads as they are now: pieces in the conversation are drawn from these, never from what was true when Maru asked. */
+  threads: ThreadT[];
+  tz: string;
+  onThreads: (threads: ThreadT[]) => void;
   checkInLine: string;
   /** The last seven days' moods, oldest first; today is last. */
   moodWeek: (number | null)[];
@@ -82,12 +85,17 @@ export function Conversation({
   const [week, setWeek] = useState(moodWeek);
   const [busy, setBusy] = useState(false);
   const [running, setRunning] = useState<{ id: string; index: number } | null>(null);
+  const [stepping, setStepping] = useState<{ id: string; thread: string; step: ThreadStatus } | null>(null);
   const [draft, setDraft] = useState("");
   const [focus, setFocus] = useState<Focus | null>(initialFocus ?? null);
   const scroller = useRef<HTMLDivElement | null>(null);
   const input = useRef<HTMLInputElement | null>(null);
   const acted = useRef(false);
   const inputId = dock ? "tell-maru-dock" : "tell-maru";
+  const byId = new Map(threads.map((t) => [t._id, t]));
+  // Only the newest piece on a thread can be tapped: an older one shows where it is now.
+  const newest = new Map<string, string>();
+  for (const m of messages) for (const id of piecesOf(m)) newest.set(id, m._id);
 
   // "Ask Maru" on a post: this conversation takes it up, and the composer is ready.
   useEffect(() => {
@@ -107,7 +115,9 @@ export function Conversation({
     if (dock) return;
     const onHello = (e: Event) => {
       const hello = (e as CustomEvent<KataMessage>).detail;
-      setMessages((ms) => [...ms.filter((m) => m.answer || !isHello(m)), hello]);
+      // A mood asked again here settles the one still open above, as the server did.
+      const again = asksMood(hello);
+      setMessages((ms) => [...ms.filter((m) => m.answer || !isHello(m)).map((m) => (again && !m.answer && m.from === "kata" && asksMood(m) ? { ...m, answer: "later" } : m)), hello]);
     };
     window.addEventListener(HELLO_EVENT, onHello);
     return () => window.removeEventListener(HELLO_EVENT, onHello);
@@ -144,6 +154,7 @@ export function Conversation({
   async function send(
     body:
       | { messageId: string; value: string; edit?: string; inputs?: Record<string, string>; screen?: string[]; here?: string; focus?: string }
+      | { messageId: string; thread: string; step: ThreadStatus }
       | { text: string; screen?: string[]; here?: string; focus?: string },
     optimistic: KataMessage
   ) {
@@ -151,7 +162,7 @@ export function Conversation({
     setBusy(true);
     const before = messages;
     setMessages((ms) => [
-      ...ms.map((m) => ("messageId" in body && m._id === body.messageId ? { ...m, answer: body.value } : m)),
+      ...ms.map((m) => ("value" in body && m._id === body.messageId ? { ...m, answer: body.value } : m)),
       optimistic,
     ]);
     try {
@@ -168,7 +179,7 @@ export function Conversation({
       };
       if (!res.ok || !data.messages) throw new Error(data.error ?? `${name} couldn’t take that just now. Try again.`);
       setMessages((ms) => [...ms.filter((m) => m._id !== optimistic._id), ...data.messages!]);
-      if (data.threads) onThreads?.(data.threads);
+      if (data.threads) onThreads(data.threads);
       if (data.actions?.length) perform(data.actions);
     } catch (err) {
       setMessages(before);
@@ -176,6 +187,7 @@ export function Conversation({
     } finally {
       setBusy(false);
       setRunning(null);
+      setStepping(null);
     }
   }
 
@@ -183,8 +195,17 @@ export function Conversation({
     if (busy || m.answer) return;
     const mood = asksMood(m) ? Number(value) : null;
     if (mood) setWeek((w) => [...w.slice(0, -1), mood]);
+    // An answer about a thread says which, as the server will: two "Done"s in a row can't read the same.
+    const about = m.threadId && !mood ? byId.get(m.threadId) : undefined;
     // A tapped answer to Maru ("Draft replies to Arjun") is said, like typing it, so it sees the screen too.
-    send({ messageId: m._id, value, ...(value.startsWith("say:") ? seenNow() : {}) }, mine(label, mood));
+    send({ messageId: m._id, value, ...(value.startsWith("say:") ? seenNow() : {}) }, mine(about ? `${about.title}: ${label}` : label, mood));
+  }
+
+  /** A step on a thread's own card in the conversation: set there and then, as on its card on home. */
+  function step(m: KataMessage, thread: ThreadT, value: ThreadStatus, label: string) {
+    if (busy) return;
+    setStepping({ id: m._id, thread: thread._id, step: value });
+    send({ messageId: m._id, thread: thread._id, step: value }, mine(`${thread.title}: ${label}`, null));
   }
 
   /** The post they asked from, or the posts in view by id (the server reads them, and only when the words are about them). */
@@ -262,11 +283,46 @@ export function Conversation({
               );
             }
             const open = !m.answer;
+            const checkIn = m.kind === "checkin" && m.threadId && !asksMood(m) ? m.threadId : null;
             return (
               <li key={m._id} className="appear flex flex-col items-start gap-2.5">
                 {m.text ? <KataText text={m.text} /> : null}
                 {m.done.length ? <Receipts done={m.done} /> : null}
-                {m.choices.length ? (
+                {checkIn ? (
+                  <div className="w-full max-w-[26rem]">
+                    <CheckIn
+                      message={m}
+                      thread={byId.get(checkIn) ?? null}
+                      today={today}
+                      tz={tz}
+                      live={newest.get(checkIn) === m._id}
+                      busy={busy}
+                      onAnswer={(value, label) => reply(m, value, label)}
+                    />
+                  </div>
+                ) : null}
+                {m.choices.some((c) => c.thread) ? (
+                  <div className="grid w-full max-w-[26rem] grid-cols-1 gap-2">
+                    {m.choices.map((c, i) => {
+                      if (!c.thread) return null;
+                      const t = byId.get(c.thread) ?? null;
+                      return (
+                        <ThreadPiece
+                          key={i}
+                          thread={t}
+                          title={c.label}
+                          today={today}
+                          tz={tz}
+                          live={newest.get(c.thread) === m._id}
+                          pending={stepping?.id === m._id && stepping.thread === c.thread ? stepping.step : null}
+                          busy={busy}
+                          onStep={(value, label) => t && step(m, t, value, label)}
+                        />
+                      );
+                    })}
+                  </div>
+                ) : null}
+                {m.choices.some((c) => !c.thread) ? (
                   <Choices message={m} running={running?.id === m._id ? running.index : null} onChoose={(i, edit, inputs) => choose(m, i, edit, inputs)} />
                 ) : null}
                 {asksMood(m) ? (
@@ -285,7 +341,7 @@ export function Conversation({
                       </button>
                     ))}
                   </div>
-                ) : m.replies.length ? (
+                ) : !checkIn && m.replies.length ? (
                   <div className="flex flex-wrap gap-2">
                     {m.replies.map((r) => (
                       <button

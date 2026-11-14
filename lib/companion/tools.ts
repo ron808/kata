@@ -197,7 +197,10 @@ const offerChoicesTool = (tools: string[]) =>
             label: { type: "string", description: "Under six words: what tapping it does or says." },
             do: {
               type: "object",
-              properties: { tool: { type: "string", enum: tools }, args: { type: "object" } },
+              properties: {
+                tool: { type: "string", enum: tools },
+                args: { type: "object", description: 'That tool\'s own arguments, by its names: {"thread":"Gym","status":"done"} for update_thread.' },
+              },
               required: ["tool", "args"],
             },
           },
@@ -473,10 +476,108 @@ export function toolsFor(said: string, { every = false, screen = false, logs = f
 
 // ── Threads ───────────────────────────────────────────────────────────────────
 
+const threadsOf = (ctx: EngineCtx) => Thread.find({ userId: ctx.userId, archived: false }).sort({ lastTouchedAt: -1 }).limit(100).lean<IThread[]>();
+
 async function findThread(ctx: EngineCtx, name: string): Promise<IThread | null> {
-  const all = await Thread.find({ userId: ctx.userId, archived: false }).sort({ lastTouchedAt: -1 }).limit(100).lean<IThread[]>();
-  return closest(all, name, (t) => t.title);
+  return closest(await threadsOf(ctx), name, (t) => t.title);
 }
+
+/** The thread a tool was called about. */
+async function theThread(ctx: EngineCtx, args: Args, hint = ""): Promise<IThread> {
+  const name = str(args.thread) ?? "";
+  if (!name) throw new Unable("Which thread? None was named.", "Pass thread: its title, as listed.");
+  const t = await findThread(ctx, name);
+  if (!t) throw new Unable(`No thread called “${name}”.`, hint);
+  return t;
+}
+
+// ── Buttons on a thread ───────────────────────────────────────────────────────
+
+/** Tools that work on a thread they keep: without one, they can't run. */
+const ON_A_THREAD = new Set(["update_thread", "log_thread", "archive_thread"]);
+
+// What models call the thread when they don't use the tool's own word for it ("thread_id": "Gym").
+const THREAD_ALIASES = ["thread_id", "threadId", "thread_title", "title", "name", "id"];
+
+/** A thread tool's arguments with the thread under its own name. */
+function withThreadArg(args: Args): Args {
+  if (str(args.thread)) return args;
+  const key = THREAD_ALIASES.find((k) => str(args[k]));
+  if (!key) return args;
+  const { [key]: thread, ...rest } = args;
+  return { ...rest, thread };
+}
+
+// Words on a button that say what to do, not which thread ("Mark Gym done", "Log water habit").
+const BUTTON_WORDS = new Set(
+  ["mark", "log", "done", "as", "habit", "update", "set", "change", "stuck", "waiting", "moving", "pause", "paused", "archive", "stop", "track", "tracking", "today", "it", "now", "again", "count"].map(stem)
+);
+
+/** The one thread a button's words point to ("Mark scrapers as done"), for a model that named it only there. */
+function threadInLabel(all: IThread[], label: string): IThread | null {
+  const said = new Set(keywords(label).filter((w) => !BUTTON_WORDS.has(w)));
+  const fits = all
+    .map((t) => ({ t, n: keywords(habitName(t.title)).filter((w) => said.has(w)).length }))
+    .filter((f) => f.n > 0)
+    .sort((a, b) => b.n - a.n);
+  return fits.length === 1 || (fits.length > 1 && fits[0].n > fits[1].n) ? fits[0].t : null;
+}
+
+// A status in other words: on a button ("Mark Gym done"), or from a model ("completed").
+const STATUS_WORDS: [ThreadStatus, RegExp][] = [
+  ["done", /\b(?:done|finish(?:ed)?|complete(?:d)?|did it)\b/],
+  ["stuck", /\b(?:stuck|blocked)\b/],
+  ["waiting", /\bwaiting\b/],
+  ["paused", /\b(?:pause(?:d)?|on hold)\b/],
+  ["moving", /\b(?:moving|working on it|in progress|back on it)\b/],
+];
+const statusIn = (words: string) => THREAD_STATUSES.find((s) => s === words) ?? STATUS_WORDS.find(([, said]) => said.test(words))?.[0];
+
+/** What update_thread can change. */
+const CHANGES = ["status", "next_step", "note", "due", "shared", "track", "untrack"];
+const isSet = (v: unknown) => v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && !v.length);
+
+/**
+ * A button that works on a thread, put right: models name the thread under another key, or only
+ * on the button with no arguments at all ("Mark Finish scrapers done"), and a button that can't
+ * find its thread fails when it's tapped. `why` (fit to show the writer) when it doesn't point to
+ * one thread they keep, or says nothing to do to it.
+ */
+async function threadChoice(ctx: EngineCtx, tool: string, raw: Args, label: string): Promise<{ args: Args; thread: IThread } | { why: string }> {
+  const args = withThreadArg(raw);
+  const named = str(args.thread);
+  const thread = named ? await findThread(ctx, named) : threadInLabel(await threadsOf(ctx), label);
+  if (!thread) return { why: "That button didn’t say which thread it was for. Say it in words instead." };
+  const fixed: Args = { ...args, thread: thread.title };
+  if (tool !== "update_thread") return { args: fixed, thread };
+  if (isSet(fixed.status)) fixed.status = statusIn(norm(String(fixed.status))) ?? fixed.status;
+  if (!CHANGES.some((k) => isSet(fixed[k]))) {
+    // The title's own words don't count: "Finish scrapers" isn't a status.
+    const status = statusIn(norm(label).replace(norm(thread.title), " "));
+    if (!status) return { why: `That button didn’t say what to change on ${thread.title}. Say it in words instead.` };
+    fixed.status = status;
+  }
+  return { args: fixed, thread };
+}
+
+/** A thread offered as itself: its card in the conversation, set with its own steps (see answerStep). */
+export function threadPiece(t: { _id: unknown; title: string; hue: number }): IChoice {
+  return { label: t.title, detail: "", kind: "thread", tool: "thread", args: { id: String(t._id), thread: t.title, hue: t.hue }, editable: false, public: false, inputs: [], action: "" };
+}
+
+/** Tapping it would change nothing: a status the thread already has, or a habit already counted today. */
+function changesNothing(t: IThread, args: Args, ctx: EngineCtx): boolean {
+  if (CHANGES.some((k) => k !== "status" && isSet(args[k]))) return false;
+  const status = THREAD_STATUSES.find((s) => s === args.status);
+  if (!status) return true;
+  return t.kind === "habit" && status === "done" ? !habitDone(t, ctx) : status === t.status;
+}
+
+// Words that ask how it's all going ("how are we doing today?"): every thread is on topic.
+const ALL_OF_IT = new Set(
+  ["how", "we", "us", "doing", "going", "today", "tonight", "thing", "things", "everything", "anything", "status", "update", "progress", "up", "where", "at", "next", "now", "so", "far", "look", "looking", "lately", "it"].map(stem)
+);
+const asksAboutAll = (said: string) => keywords(said).every((w) => ALL_OF_IT.has(w));
 
 // "Yes", "that one", "log it": what points back at the exchange before.
 const POINTS_BACK = /\b(?:it|that|this|those|them|yes|yeah|yep|ok(?:ay)?|sure|please|same|again)\b/i;
@@ -506,9 +607,7 @@ const shortDay = (day: string) => new Date(`${day}T00:00:00Z`).toLocaleDateStrin
 
 async function updateThread(turn: Turn, args: Args): Promise<string> {
   const { ctx } = turn;
-  const name = str(args.thread) ?? "";
-  const t = await findThread(ctx, name);
-  if (!t) throw new Unable(`No thread called “${name}”.`, "Use create_thread if it's new.");
+  const t = await theThread(ctx, args, "Use create_thread if it's new.");
 
   const set: Partial<IThread> = {};
   const changes: string[] = [];
@@ -659,8 +758,7 @@ function valueFor(f: Pick<IThreadField, "type">, raw: unknown): number | string 
 
 async function logThread(turn: Turn, args: Args): Promise<string> {
   const { ctx } = turn;
-  const t = await findThread(ctx, str(args.thread) ?? "");
-  if (!t) throw new Unable(`No thread called “${str(args.thread) ?? ""}”.`, "Use create_thread if it's new.");
+  const t = await theThread(ctx, args, "Use create_thread if it's new.");
   // Starting a thread already logged what they said: the model logging it too adds nothing.
   if (args.add !== true && turn.done.some((d) => d.text === `Logged ${t.title}`)) return "Already logged.";
   const given = args.values && typeof args.values === "object" ? Object.entries(args.values as Args) : [];
@@ -716,8 +814,7 @@ async function logThread(turn: Turn, args: Args): Promise<string> {
 }
 
 async function archiveThread(turn: Turn, args: Args): Promise<string> {
-  const t = await findThread(turn.ctx, str(args.thread) ?? "");
-  if (!t) throw new Unable(`No thread called “${str(args.thread) ?? ""}”.`);
+  const t = await theThread(turn.ctx, args);
   await saveThread(turn.ctx, t._id, { archived: true });
   turn.changed = true;
   receipt(turn, "thread", `Stopped tracking ${t.title}`, "It comes back if you mention it again.", "/threads", t.hue);
@@ -1224,7 +1321,8 @@ async function theMission(turn: Turn, name?: string): Promise<IMission> {
   const open = await openMissions(ctx);
   if (!open.length) throw new Unable("There’s no mission going right now.", "start_mission makes one.");
   if (name) {
-    const found = closest(open, name, (m) => missionName(m, ctx.day));
+    // Buttons carry the list's id: "Yesterday’s list" is a different name a day later.
+    const found = open.find((m) => String(m._id) === name) ?? closest(open, name, (m) => missionName(m, ctx.day));
     if (found) return found;
   }
   const only = open.find((m) => m.focusedAt) ?? (open.length === 1 ? open[0] : null);
@@ -1233,7 +1331,7 @@ async function theMission(turn: Turn, name?: string): Promise<IMission> {
 }
 
 function focusChoice(m: Pick<IMission, "_id" | "title" | "day">, ctx: EngineCtx): IChoice {
-  return { label: "Turn on focus", detail: missionName(m, ctx.day), kind: "mission", tool: "set_focus", args: { on: true, mission: missionName(m, ctx.day) }, editable: false, public: false, inputs: [], action: "" };
+  return { label: "Turn on focus", detail: missionName(m, ctx.day), kind: "mission", tool: "set_focus", args: { on: true, mission: String(m._id) }, editable: false, public: false, inputs: [], action: "" };
 }
 
 function focused(turn: Turn, m: Pick<IMission, "_id">, on: boolean) {
@@ -1468,7 +1566,7 @@ async function runAgainTool(turn: Turn, args: Args): Promise<string> {
   const { ctx } = turn;
   const { past } = await listMissions(ctx);
   const name = str(args.mission);
-  const old = (name ? closest(past, name, (m) => missionName(m, ctx.day)) : null) ?? (name ? null : past[0]);
+  const old = (name ? (past.find((m) => String(m._id) === name) ?? closest(past, name, (m) => missionName(m, ctx.day))) : null) ?? (name ? null : past[0]);
   if (!old) throw new Unable(name ? `I can’t find a mission called “${name}”.` : "There’s no mission to run again yet.");
   const made = await runAgain(ctx, String(old._id));
   if (!made) throw new Unable("That didn’t save. Try again.");
@@ -1722,6 +1820,81 @@ const KIND_OF: Record<string, ReceiptKind> = {
   carry_mission: "mission",
 };
 
+// What each page is called on a button.
+const PAGE_NAMES: Record<string, string> = {
+  home: "Home",
+  today: "today’s page",
+  pages: "your pages",
+  letters: "your letters",
+  breakdowns: "Breakdowns",
+  missions: "your lists",
+  focus: "focus",
+  threads: "Threads",
+  memories: "what I remember",
+  people: "People",
+  find_people: "Find people",
+  notifications: "notifications",
+  gallery: "the gallery",
+  builder: "the page builder",
+  settings: "Settings",
+  profile: "the profile",
+};
+
+/**
+ * A choice's words, from what it does: the same words for the same thing every time, and never
+ * a label that says one thing while the button does another. The model's label stays only where
+ * code has nothing to go on.
+ */
+function labelFor(tool: string, args: Args, said: string): string {
+  const q = (v: unknown) => `“${(str(v) ?? "").slice(0, 36)}”`;
+  switch (tool) {
+    case "create_thread":
+      return titleOf(args.title) ? `Keep track of ${q(titleOf(args.title))}` : "Keep track of something new";
+    case "update_thread": {
+      // Named by what changes, so two offers on one thread never read the same.
+      const due = /^\d{4}-\d{2}-\d{2}$/.test(str(args.due) ?? "") ? shortDay(str(args.due)!) : "";
+      const track = parseTrack(args.track);
+      if (str(args.next_step)) return `Next step: ${str(args.next_step)}`;
+      if (str(args.note)) return `Note on ${str(args.thread)}: ${str(args.note)}`;
+      if (due) return `${str(args.thread)} due ${due}`;
+      if (track.length) return `Keep track of ${track.map((f) => f.label.toLowerCase()).join(" and ")}`;
+      if (typeof args.shared === "boolean") return args.shared ? "Show it on your profile" : "Take it off your profile";
+      return `Update ${str(args.thread)}`;
+    }
+    case "log_thread":
+      return `Log ${str(args.thread)}`;
+    case "archive_thread":
+      return `Stop tracking ${str(args.thread)}`;
+    case "remember":
+      return "Remember this";
+    case "write_on_page":
+      return "Add it to today’s page";
+    case "add_page_question":
+      return str(args.question) ? "Ask it on your page every day" : "Add a question to your page";
+    case "remove_page_question":
+      return `Take ${q(args.question)} off your page`;
+    case "use_page":
+      return `Use ${q(args.page)} today`;
+    case "set_check_in":
+      return args.when === "both" ? "Check in morning and evening" : CHECK_INS.some((c) => c === args.when) ? `Check in in the ${str(args.when)}` : "Change when I check in";
+    case "set_theme":
+      return args.theme === "system" ? "Follow your device’s theme" : args.theme === "dark" || args.theme === "light" ? `Switch to ${str(args.theme)}` : said;
+    case "open_page":
+      return PAGE_NAMES[str(args.page) ?? ""] ? `Open ${PAGE_NAMES[str(args.page)!]}` : said;
+    case "make_breakdown":
+      return str(args.period) ? `Break down ${str(args.period)}` : "Make a breakdown";
+    case "set_focus":
+      return args.on === false ? "Turn off focus" : "Turn on focus";
+    case "end_mission":
+      return args.how === "drop" ? "Drop the list" : "Wrap up the list";
+    case "follow":
+    case "unfollow":
+      return str(args.handle) ? `${tool === "follow" ? "Follow" : "Unfollow"} @${str(args.handle)!.replace(/^@/, "")}` : said;
+    default:
+      return said;
+  }
+}
+
 /** The specifics of a choice, from its arguments: which thread, when, what it would write. Not what its label says. */
 function detailOf(tool: string, args: Args, label: string): string {
   const due = /^\d{4}-\d{2}-\d{2}$/.test(str(args.due) ?? "") ? `due ${shortDay(str(args.due)!)}` : "";
@@ -1930,8 +2103,10 @@ async function offerChoices(turn: Turn, args: Args): Promise<string> {
   const offered = Array.isArray(args.choices) ? (args.choices as unknown[]).slice(0, 4) : [];
   const tracked: string[] = [];
   const strays: string[] = [];
+  const idle: string[] = [];
   let here = false;
-  let needs: string | undefined;
+  let unclear = false;
+  const asks = new Map<IChoice, string>();
   for (const raw of offered) {
     if (!raw || typeof raw !== "object") continue;
     const c = raw as { label?: unknown; do?: { tool?: unknown; args?: unknown } };
@@ -1942,7 +2117,7 @@ async function offerChoices(turn: Turn, args: Args): Promise<string> {
       if (label.length <= 32) turn.replies.push(label);
       continue;
     }
-    const toolArgs = c.do?.args && typeof c.do.args === "object" ? (c.do.args as Args) : {};
+    let toolArgs = c.do?.args && typeof c.do.args === "object" ? (c.do.args as Args) : {};
     if (tool === "draft_replies") {
       // Keep the post itself, so the tap later works without the screen.
       const post = postFrom(turn, toolArgs);
@@ -1970,17 +2145,38 @@ async function offerChoices(turn: Turn, args: Args): Promise<string> {
         continue;
       }
     }
-    const stray = await strayThread(turn, tool, toolArgs);
+    // A button on a thread that can't find it, or would change nothing, isn't one to offer.
+    if (ON_A_THREAD.has(tool)) {
+      const found = await threadChoice(turn.ctx, tool, toolArgs, label);
+      if ("why" in found) {
+        unclear = true;
+        continue;
+      }
+      if (tool === "update_thread" && changesNothing(found.thread, found.args, turn.ctx)) {
+        idle.push(found.thread.title);
+        continue;
+      }
+      toolArgs = found.args;
+    }
+    // "How are we doing today?" is about every thread.
+    const stray = asksAboutAll(turn.said) ? null : await strayThread(turn, tool, toolArgs);
     if (stray) {
       strays.push(stray);
       continue;
     }
+    // Where a thread stands is set with its own steps, the same ones its card has: the thread
+    // itself is offered, once, and the step they tap is theirs to pick.
+    if (tool === "update_thread" && CHANGES.every((k) => k === "status" || !isSet(toolArgs[k]))) {
+      const t = await findThread(turn.ctx, str(toolArgs.thread) ?? "");
+      if (t && !turn.choices.some((x) => x.tool === "thread" && x.args.id === String(t._id))) turn.choices.push(threadPiece(t));
+      continue;
+    }
     // What it needs that the model didn't know becomes a form on the choice; the rest can be changed in it.
     const form = await formFor(turn, tool, toolArgs);
-    if (form && !complete(form.inputs)) needs ??= form.ask;
-    turn.choices.push({
-      label,
-      detail: detailOf(tool, toolArgs, label),
+    const words = labelFor(tool, toolArgs, label).slice(0, 60);
+    const choice: IChoice = {
+      label: words,
+      detail: detailOf(tool, toolArgs, words),
       kind: KIND_OF[tool] ?? "open",
       tool,
       args: toolArgs,
@@ -1988,8 +2184,14 @@ async function offerChoices(turn: Turn, args: Args): Promise<string> {
       public: false,
       inputs: form?.inputs ?? [],
       action: form?.action ?? "",
-    });
+    };
+    if (form && !complete(form.inputs)) asks.set(choice, form.ask);
+    turn.choices.push(choice);
   }
+  // "Keep track of something new", with nothing to say what, next to real offers is noise.
+  if (turn.choices.length > 1) turn.choices = turn.choices.filter((c) => !(c.tool === "create_thread" && !titleOf(c.args.title) && !list(c.args.ideas).length));
+  // A form's own question, for the first one still offered that has something to fill in.
+  const needs = turn.choices.map((c) => asks.get(c)).find(Boolean);
   turn.replies = (turn.choices.length ? turn.replies.filter((r) => !DECLINES.test(r)) : turn.replies).slice(0, 3);
   // Anything but a question reads like a button label ("Create a new habit"): a form's own question replaces it.
   const ask = str(args.ask)?.endsWith("?") ? str(args.ask) : needs;
@@ -2004,6 +2206,8 @@ async function offerChoices(turn: Turn, args: Args): Promise<string> {
       tracked.length ? `They already track ${tracked.join(", ")}: offer something new, or a form without a title.` : "",
       here ? "They're already on that page: what they mean is on their screen, so answer about it or act on it." : "",
       strays.length ? `Their message isn't about ${strays.join(" or ")}: deal with what they said. Something new is a create_thread.` : "",
+      unclear ? 'A button on a thread needs its args: {"thread": its title, as listed, and what to change}.' : "",
+      idle.length ? `Tapping that would change nothing on ${idle.join(" or ")}.` : "",
       offersDrafts ? "Don't offer to draft replies: call draft_replies for that post now." : "",
     ];
     throw new Unable("Nothing to offer.", why.filter(Boolean).join(" "));
@@ -2131,6 +2335,7 @@ export async function runTool(turn: Turn, call: ChatCompletionMessageToolCall): 
   } catch {
     return { out: "Those arguments weren't valid JSON.", ok: false };
   }
+  if (ON_A_THREAD.has(name)) args = withThreadArg(args);
   try {
     // A model finishing its last job: logging on a thread they didn't mention, with no number in what they said.
     const stray = name === "log_thread" && (!/\d/.test(turn.said) || !Object.keys((args.values as Args) ?? {}).length) ? await strayThread(turn, name, args) : null;
@@ -2161,7 +2366,13 @@ export async function runChoice(
   if (!run) return { ok: false, why: "That can’t be done from here any more." };
   const applied = applyInputs(choice, filled);
   if ("why" in applied) return { ok: false, why: applied.why };
-  const args = choice.editable && edit?.trim() ? { ...applied.args, text: edit.trim() } : applied.args;
+  let args = choice.editable && edit?.trim() ? { ...applied.args, text: edit.trim() } : applied.args;
+  // Buttons offered before they were put right get it now.
+  if (ON_A_THREAD.has(choice.tool)) {
+    const found = await threadChoice(turn.ctx, choice.tool, args, choice.label);
+    if ("why" in found) return { ok: false, why: found.why };
+    args = found.args;
+  }
   try {
     // A choice stored before it had a form, still missing something: the form comes now.
     if (!choice.inputs?.length && CHOOSABLE.includes(choice.tool) && (await askWithForm(turn, choice.tool, args))) return { ok: true };

@@ -500,6 +500,170 @@
     white-space: nowrap;
   }
 
+  /* A thread in the conversation: a soft patch of its hue (from [data-hue]), its name and where it
+     stands, then what can be done about it. Past ones (asked again further down, or settled since)
+     go quiet and keep only the name. */
+  .piece {
+    border-radius: var(--radius-md);
+    background-color: var(--tint);
+    color: var(--deep);
+    padding: 0.75rem;
+  }
+  .piece-past,
+  .piece-gone {
+    background-color: var(--raised);
+    color: var(--ink);
+  }
+
+  /* A question's answers: equal buttons, two to a row, an odd last one across both. */
+  .answers {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+  .answers > :last-child:nth-child(odd) {
+    grid-column: span 2;
+  }
+  .answer {
+    min-height: 2.75rem;
+    padding: 0.45rem 0.75rem;
+    border-radius: var(--radius-sm);
+    border: 2px solid var(--edge);
+    background-color: var(--surface);
+    color: var(--ink);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    line-height: 1.2;
+    text-align: center;
+    transition: transform 0.3s var(--ease-out), box-shadow 0.3s var(--ease-out), background-color 0.3s var(--ease-out);
+  }
+  .answer:disabled {
+    opacity: 0.5;
+    box-shadow: none;
+  }
+  /* The answer they gave, kept where the answers were. */
+  .answered {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 2rem;
+    padding: 0 0.8rem;
+    border-radius: 999px;
+    border: 2px solid var(--edge);
+    background-color: var(--sun);
+    color: var(--on-sun);
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+  /* Putting something off: quiet, but still a full-size target. */
+  .not-now {
+    min-height: 2.75rem;
+    padding: 0 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 3px;
+  }
+  .not-now:disabled {
+    opacity: 0.5;
+  }
+
+  /* Something Maru did: a soft patch of the hue of what it touched, not a button. */
+  .receipt {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    border-radius: var(--radius-md);
+    background-color: var(--tint);
+    color: var(--deep);
+    padding: 0.55rem 0.75rem;
+  }
+  .receipt-link:hover .receipt-text {
+    text-decoration: underline;
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 3px;
+  }
+
+  /* Two other looks for the same pieces, to compare in the Lab (/lab/chat). Delete the one not chosen. */
+  [data-look="stickers"] .piece {
+    background-color: var(--surface);
+    color: var(--ink);
+    border: 2px solid var(--edge);
+    border-top: 8px solid var(--hue);
+    box-shadow: var(--shadow-sticker-sm);
+  }
+  [data-look="stickers"] .piece-past,
+  [data-look="stickers"] .piece-gone {
+    border-top-width: 2px;
+    box-shadow: none;
+  }
+  [data-look="stickers"] .receipt {
+    width: fit-content;
+    max-width: 100%;
+    border-radius: 999px;
+    border: 2px solid var(--edge);
+    background-color: var(--surface);
+    color: var(--ink);
+    padding: 0.3rem 0.9rem 0.3rem 0.35rem;
+  }
+  [data-look="stickers"] .answers {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  [data-look="stickers"] .answer {
+    border-radius: 999px;
+    padding: 0.45rem 1.1rem;
+  }
+  [data-look="quiet"] .piece {
+    border-radius: 0;
+    background-color: transparent;
+    color: var(--ink);
+    border-left: 4px solid var(--hue);
+    padding: 0.2rem 0 0.2rem 0.85rem;
+  }
+  [data-look="quiet"] .piece-past,
+  [data-look="quiet"] .piece-gone {
+    border-left-color: color-mix(in oklab, var(--hue) 45%, transparent);
+  }
+  [data-look="quiet"] .receipt {
+    background-color: transparent;
+    color: var(--ink);
+    padding: 0.15rem 0;
+  }
+  [data-look="quiet"] .answers {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 0;
+    overflow: hidden;
+    border: 2px solid var(--edge);
+    border-radius: 18px;
+    background-color: var(--surface);
+    box-shadow: var(--shadow-sticker-sm);
+  }
+  [data-look="quiet"] .answers > :last-child:nth-child(odd) {
+    grid-column: auto;
+  }
+  [data-look="quiet"] .answer {
+    min-height: 3.25rem;
+    border: 0;
+    border-radius: 0;
+    font-size: 0.8125rem;
+    box-shadow: none;
+    transform: none;
+  }
+  [data-look="quiet"] .answer + .answer {
+    border-left: 2px solid var(--edge);
+  }
+  /* One row presses as one control: a step lights up rather than lifting off it. */
+  [data-look="quiet"] .answer.press:not(:disabled):hover,
+  [data-look="quiet"] .answer.press:not(:disabled):active {
+    transform: none;
+    box-shadow: none;
+    background-color: color-mix(in oklab, var(--sun) 35%, var(--surface));
+  }
+
   /* A person's (or a thread's) round seal: their hue, their initial. */
   .avatar {
     display: inline-grid;

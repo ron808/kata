@@ -7,7 +7,9 @@ import { Icon } from "@/components/shared/Icon";
 import { KIND_LABEL, Status } from "@/components/shared/Status";
 import { useToast } from "@/components/shared/Toast";
 import type { ThreadT } from "@/lib/types";
-import { metaWithToday, onYourMind, showsStatus, stepOn, stepsFor } from "./meta";
+import { ThreadSteps } from "@/components/maru/ThreadSteps";
+import { stepSaid } from "@/lib/companion/steps";
+import { metaWithToday, onYourMind, showsStatus } from "./meta";
 import { ThreadMap } from "./ThreadMap";
 
 /** Change a thread and hand back the saved version. */
@@ -45,7 +47,7 @@ export function ThreadNote({
     onChange({ ...t, ...optimistic });
     try {
       onChange(await patchThread(t._id, body));
-      if (body.status === "done") toast(t.kind === "habit" ? `${t.title}: done for today.` : `${t.title}: done. ${name} took it off your mind.`, "success");
+      if (body.status === "done") toast(t.kind === "habit" ? `${stepSaid(t, "done")}.` : `${stepSaid(t, "done")}. ${name} took it off your mind.`, "success");
     } catch (err) {
       onChange(before);
       toast(err instanceof Error ? err.message : "That didn’t save", "danger");
@@ -70,24 +72,15 @@ export function ThreadNote({
           {t.nextStep}
         </p>
       ) : null}
-      <div className="scale mt-4" role="group" aria-label={`Where ${t.title} is`}>
-        {stepsFor(t.kind)
-          .filter((s) => s.value !== "paused" || t.kind === "habit" || t.kind === "person")
-          .map((s) => {
-            const on = stepOn(t, s.value, today, tz);
-            return (
-              <button
-                key={s.value}
-                type="button"
-                className="scale-step scale-row"
-                aria-pressed={on}
-                disabled={saving}
-                onClick={() => !on && save({ status: s.value }, t.kind === "habit" && s.value === "done" ? {} : { status: s.value })}
-              >
-                {s.label}
-              </button>
-            );
-          })}
+      <div className="mt-4">
+        <ThreadSteps
+          thread={t}
+          today={today}
+          tz={tz}
+          paused={false}
+          disabled={saving}
+          onStep={(step) => save({ status: step }, t.kind === "habit" ? {} : { status: step })}
+        />
       </div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <button

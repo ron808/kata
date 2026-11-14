@@ -18,8 +18,10 @@ import { focusedMission, missionLines, openMissions } from "@/lib/missions";
 import { missionName, tally } from "@/lib/missions/core";
 import { whatAsked } from "@/lib/missions/said";
 import { listThreads } from "./threads";
+import { doneToday } from "./steps";
+import { capFirst, count, joinList } from "./text";
 import { addDays, dateToDay, dayDiff, localDay } from "./time";
-import { breakdownAsked, breakdownTurn, dayLabel, fieldText, missionTurn, newTurn, placeAsked, readsOnly, runChoice, runTool, toolsFor, type ClientAction, type Turn } from "./tools";
+import { breakdownAsked, breakdownTurn, dayLabel, fieldText, missionTurn, newTurn, placeAsked, readsOnly, runChoice, runTool, threadPiece, toolsFor, type ClientAction, type Turn } from "./tools";
 
 /**
  * Maru with a language model: it reads what it knows about the writer (threads, memories,
@@ -99,13 +101,16 @@ function threadLine(t: ThreadT, ctx: EngineCtx): string {
   if (t.lastNote && (t.status === "stuck" || t.status === "waiting")) parts[2] = `${t.status} (on: ${t.lastNote})`;
   else if (t.lastNote) parts.push(`note: ${t.lastNote}`);
   if (t.nextStep) parts.push(`next: ${t.nextStep}`);
-  if (t.dueAt) {
+  // A habit goes by its rhythm: an old date on one only misleads.
+  if (t.dueAt && t.kind !== "habit") {
     const due = t.dueAt.slice(0, 10);
     const d = dayDiff(due, ctx.day);
     // With its weekday, so "by Friday" can be checked against the date it's set to.
     const named = `${weekday(due)} ${due}`;
     parts.push(d < 0 ? `was due ${named}` : d === 0 ? `due today (${named})` : d === 1 ? `due tomorrow (${named})` : `due ${named}`);
   }
+  // Whether today is done says more than the status, which stays "moving" for a habit.
+  if (t.kind === "habit" && t.status !== "paused") parts.push(doneToday(t, ctx.day, ctx.tz) ? "done today" : "not done today");
   if (t.kind === "habit" && t.streak > 0) parts.push(habitRun(t.streak, t.title));
   for (const f of t.fields) parts.push(fieldLine(f, ctx));
   if (t.shared) parts.push("on their profile");
@@ -559,6 +564,60 @@ export async function breakDown(userId: string, raw: string): Promise<MaruExchan
     { from: "kata", kind: "reply", text: turn.ask ?? "", done: turn.done, choices: turn.choices },
   ]);
   return { ctx, created: [...opened, ...created], actions: refreshed(turn) };
+}
+
+// "How are we doing today?", "what's on today", "where are we at": the state of things, which code knows exactly.
+const STATUS_ASKED =
+  /^(?:(?:so|ok(?:ay)?|hey|and)[,\s]+)?(?:how(?:['’]s|\s+is|\s+are|\s+am)?\s+(?:we|i|things|it|everything|today|my\s+day)\s+(?:doing|going|looking)|how\s+(?:are|am)\s+(?:we|i|things)|what(?:['’]s|\s+is)\s+(?:on|left|due)(?:\s+(?:for\s+)?today)?|where\s+(?:are\s+we|am\s+i|do\s+(?:we|things)\s+stand)(?:\s+at)?|status(?:\s+update)?|(?:give\s+me\s+)?(?:an?\s+)?(?:quick\s+)?(?:update|status\s+check|rundown|overview))(?:\s+(?:today|now|so\s+far|tonight|this\s+morning))?\s*[?.!]*$/i;
+
+const are = (items: string[], one: string, many: string) => `${joinList(items)} ${items.length > 1 ? many : one}`;
+
+/** Where things stand, in one true sentence: what's due, past its date, stuck, and the habits left today. */
+export function statusText(active: ThreadT[], ctx: Pick<EngineCtx, "day" | "tz">): string {
+  if (!active.length) return "Nothing on your list right now. Tell me what you’re working on and I’ll keep track of it.";
+  const due = (t: ThreadT) => (t.kind !== "habit" && t.dueAt ? dayDiff(t.dueAt.slice(0, 10), ctx.day) : null);
+  const titles = (keep: (t: ThreadT) => boolean) => active.filter(keep).map((t) => t.title);
+  const today = titles((t) => due(t) === 0);
+  const late = titles((t) => (due(t) ?? 0) < 0 && (due(t) ?? 0) >= -7);
+  const stuck = titles((t) => t.status === "stuck");
+  const left = titles((t) => t.kind === "habit" && !doneToday(t, ctx.day, ctx.tz));
+  const kept = titles((t) => t.kind === "habit" && doneToday(t, ctx.day, ctx.tz));
+  const parts = [
+    today.length ? are(today, "is due today", "are due today") : "",
+    late.length ? are(late, "is past its date", "are past their dates") : "",
+    stuck.length ? are(stuck, "is stuck", "are stuck") : "",
+    left.length ? are(left, "isn’t done yet today", "aren’t done yet today") : kept.length ? are(kept, "is done today", "are done today") : "",
+  ].filter(Boolean);
+  if (!parts.length) return `Nothing’s due today. ${capFirst(count(active.length))} ${active.length === 1 ? "thing is" : "things are"} on your mind.`;
+  return `${capFirst(joinList(parts.slice(0, 3)))}.`;
+}
+
+/**
+ * "How are we doing today?" answered by code, with no model: one true sentence, and the threads
+ * that most need a word as their own cards. A model reading the same facts said a habit was up
+ * to date when it wasn't. Not in focus, which has its own "where are we". Null otherwise.
+ */
+export async function statusNow(userId: string, raw: string): Promise<MaruExchange | null> {
+  const said = raw.trim().slice(0, 1000);
+  if (!STATUS_ASKED.test(said)) return null;
+  const { ctx, created: opened } = await ensureToday(userId);
+  if (ctx.user.focusMissionId) return null;
+  const active = (await listThreads(ctx)).filter((t) => t.status !== "done" && t.status !== "paused");
+  // The cards in the order the sentence names them, then whatever else is on their mind.
+  const rank = (t: ThreadT) => {
+    const due = t.kind !== "habit" && t.dueAt ? dayDiff(t.dueAt.slice(0, 10), ctx.day) : null;
+    if (due === 0) return 0;
+    if (due !== null && due < 0 && due >= -7) return 1;
+    if (t.status === "stuck") return 2;
+    if (t.kind === "habit" && !doneToday(t, ctx.day, ctx.tz)) return 3;
+    return 4;
+  };
+  const cards = active.map((t, i) => ({ t, i })).sort((a, b) => rank(a.t) - rank(b.t) || a.i - b.i).slice(0, 3).map(({ t }) => threadPiece(t));
+  const created = await insertDrafts(ctx.userId, ctx.day, [
+    { from: "you", kind: "note", text: said },
+    { from: "kata", kind: "reply", text: statusText(active, ctx), choices: cards },
+  ]);
+  return { ctx, created: [...opened, ...created], actions: [] };
 }
 
 /** "Done", "where are we", "make a to-do list": settled by words alone, so most of focus costs no tokens. Null otherwise. */

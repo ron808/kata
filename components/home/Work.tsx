@@ -31,40 +31,38 @@ const ICON: Record<ReceiptKind, IconName> = {
   open: "arrow",
 };
 
+// Something Maru can do, as a button: outlined and pressable, where a receipt is a soft patch.
 const ROW = "flex w-full items-center gap-3 rounded-md border-2 border-edge bg-surface px-3 py-2.5 text-left";
 
-/** What Maru did. Each one with somewhere to go opens it. */
+/**
+ * What Maru did, as soft patches of the hue of what it touched: done, not something to press.
+ * Each one with somewhere to go opens it.
+ */
 export function Receipts({ done }: { done: Receipt[] }) {
   return (
-    <ul aria-label="Done" className="grid w-full max-w-[25rem] grid-cols-1 gap-2">
+    <ul aria-label="Done" className="grid w-full max-w-[26rem] grid-cols-1 gap-1.5">
       {done.map((d, i) => {
         const body = (
           <>
-            <span
-              data-hue={d.hue ?? HUE[d.kind]}
-              className="relative grid h-9 w-9 shrink-0 place-items-center rounded-full border-2 border-edge bg-hue text-on-hue"
-            >
-              <Icon name={ICON[d.kind]} className="h-[1.05rem] w-[1.05rem]" strokeWidth={2} />
-              <span className="absolute -bottom-1 -right-1 grid h-[1.125rem] w-[1.125rem] place-items-center rounded-full border-2 border-edge bg-surface text-ink">
-                <Icon name="check" className="h-2.5 w-2.5" strokeWidth={3.2} />
-              </span>
+            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border-2 border-edge bg-hue text-on-hue">
+              <Icon name={ICON[d.kind]} className="h-3.5 w-3.5" strokeWidth={2.2} />
             </span>
             <span className="min-w-0 flex-1">
               <span className="sr-only">Done: </span>
-              <span className="block font-semibold leading-tight [overflow-wrap:anywhere]">{d.text}</span>
-              {d.detail ? <span className="mt-0.5 line-clamp-2 block text-[0.8125rem] leading-snug text-ink/70 [overflow-wrap:anywhere]">{d.detail}</span> : null}
+              <span className="receipt-text block font-semibold leading-tight [overflow-wrap:anywhere]">{d.text}</span>
+              {d.detail ? <span className="mt-0.5 line-clamp-2 block text-[0.8125rem] leading-snug [overflow-wrap:anywhere]">{d.detail}</span> : null}
             </span>
-            {d.href ? <Icon name="arrow" className="h-4 w-4 shrink-0 text-ink/60" /> : null}
+            {d.href ? <Icon name="arrow" className="h-4 w-4 shrink-0" /> : null}
           </>
         );
         return (
-          <li key={i} className="appear" style={i ? { animationDelay: `${i * 70}ms` } : undefined}>
+          <li key={i} data-hue={d.hue ?? HUE[d.kind]} className="appear" style={i ? { animationDelay: `${i * 70}ms` } : undefined}>
             {d.href ? (
-              <Link href={d.href} className={`press ${ROW} transition-[transform,box-shadow] duration-300`}>
+              <Link href={d.href} className="receipt receipt-link">
                 {body}
               </Link>
             ) : (
-              <div className={`${ROW} shadow-sticker-sm`}>{body}</div>
+              <div className="receipt">{body}</div>
             )}
           </li>
         );
@@ -94,20 +92,27 @@ export function Choices({
   const answer = message.answer?.startsWith("do:") ? message.answer.slice(3) : null;
   const open = !message.answer && running === null;
   const drafts = message.choices.filter((c) => c.editable).length;
+  // Threads offered as themselves are drawn as their own pieces (ThreadPiece), not here.
+  const offers = message.choices.filter((c) => !c.thread).length;
   // A lone form that needs filling in opens at once, unless the message has quick answers of
   // its own (a check-in, where logging is the extra); otherwise one opens when tapped.
   const [expanded, setExpanded] = useState<number | null>(() => {
-    const forms = message.choices.filter((c) => c.inputs.length && !c.editable);
-    const only = message.choices.length === 1 && forms.length === 1;
+    const forms = message.choices.filter((c) => c.inputs.length && !c.editable && !c.thread);
+    const only = offers === 1 && forms.length === 1;
     return only && !filled(forms[0].inputs) && !message.answer && !message.replies.length ? 0 : null;
   });
   return (
-    <div role="group" aria-label="Choices" className="grid w-full max-w-[25rem] grid-cols-1 gap-2">
+    <div role="group" aria-label="Choices" className="grid w-full max-w-[26rem] grid-cols-1 gap-2">
       {message.choices.map((c, i) => {
+        if (c.thread) return null;
         const chosen = answer === String(i) || running === i;
+        // Once one is chosen the rest step aside: the chosen one says what was done.
+        if (message.answer && !chosen && !c.editable) return null;
         // Settled: another choice was made, or the message was answered another way (a check-in's "Done").
         const props = { choice: c, chosen, open, working: running === i, settled: Boolean(message.answer) && !chosen, onChoose: (edit?: string, values?: Values) => onChoose(i, edit, values) };
         if (c.editable) return <Draft key={i} {...props} primary={drafts === 1} />;
+        // One line to write down (what's in the way, the next step): the question and its box, open.
+        if (c.inputs.length === 1 && c.inputs[0].type === "text") return chosen ? null : <LineForm key={i} {...props} />;
         if (c.inputs.length) {
           return (
             <FormChoice
@@ -115,15 +120,15 @@ export function Choices({
               {...props}
               expanded={expanded === i}
               onExpand={(on) => setExpanded(on ? i : null)}
-              primary={message.choices.length === 1}
+              primary={offers === 1}
             />
           );
         }
         return <Offer key={i} {...props} />;
       })}
       {/* A check-in has its own answers, which say no better than "Not now". */}
-      {!message.answer && !message.replies.length ? (
-        <button type="button" className="chip chip-sm justify-self-start" disabled={!open} onClick={() => onChoose("no")}>
+      {!message.answer && !message.replies.length && offers ? (
+        <button type="button" className="not-now justify-self-start" disabled={!open} onClick={() => onChoose("no")}>
           Not now
         </button>
       ) : answer === "no" ? (
@@ -165,7 +170,7 @@ function Offer({ choice: c, chosen, open, working, settled, onChoose }: ChoicePr
       } ${!open && !chosen ? "shadow-none" : !open ? "shadow-sticker-sm" : ""}`}
     >
       <OfferBody choice={c} chosen={chosen} />
-      {working ? <Working /> : <Icon name={chosen ? "check" : c.public ? "globe" : "plus"} className="h-[1.1rem] w-[1.1rem] shrink-0" strokeWidth={chosen ? 2.6 : 2} />}
+      {working ? <Working /> : <Icon name={chosen ? "check" : c.public ? "globe" : "arrow"} className="h-[1.1rem] w-[1.1rem] shrink-0" strokeWidth={chosen ? 2.6 : 2} />}
     </button>
   );
 }
@@ -173,7 +178,7 @@ function Offer({ choice: c, chosen, open, working, settled, onChoose }: ChoicePr
 function OfferBody({ choice: c, chosen }: { choice: Choice; chosen: boolean }) {
   return (
     <>
-      <span data-hue={HUE[c.kind]} className="grid h-9 w-9 shrink-0 place-items-center rounded-full border-2 border-edge bg-tint text-deep">
+      <span data-hue={HUE[c.kind]} className="grid h-9 w-9 shrink-0 place-items-center rounded-full border-2 border-edge bg-hue text-on-hue">
         <Icon name={ICON[c.kind]} className="h-[1.05rem] w-[1.05rem]" strokeWidth={2} />
       </span>
       <span className="min-w-0 flex-1">
@@ -244,7 +249,7 @@ function FormChoice({
           className="flex min-w-0 flex-1 items-center gap-3 rounded-[0.875rem] px-3 py-2.5 text-left transition-colors enabled:hover:bg-ink/[0.03]"
         >
           <OfferBody choice={c} chosen={chosen} />
-          {working ? <Working /> : <Icon name={chosen ? "check" : ready ? "plus" : "pen"} className="h-[1.1rem] w-[1.1rem] shrink-0" strokeWidth={chosen ? 2.6 : 2} />}
+          {working ? <Working /> : <Icon name={chosen ? "check" : ready ? "arrow" : "pen"} className="h-[1.1rem] w-[1.1rem] shrink-0" strokeWidth={chosen ? 2.6 : 2} />}
         </button>
         {ready && open ? (
           <button
@@ -269,7 +274,7 @@ function FormChoice({
       className="appear rounded-md border-2 border-edge bg-surface p-3 shadow-sticker-sm focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--accent)]"
     >
       <div className="flex items-center gap-3">
-        <span data-hue={HUE[c.kind]} className="grid h-9 w-9 shrink-0 place-items-center rounded-full border-2 border-edge bg-tint text-deep">
+        <span data-hue={HUE[c.kind]} className="grid h-9 w-9 shrink-0 place-items-center rounded-full border-2 border-edge bg-hue text-on-hue">
           <Icon name={ICON[c.kind]} className="h-[1.05rem] w-[1.05rem]" strokeWidth={2} />
         </span>
         <p id={`${id}-label`} className="min-w-0 flex-1 font-semibold leading-tight [overflow-wrap:anywhere]">
@@ -473,6 +478,41 @@ function ListField({ id, input: i, value, onChange, onTouch }: { id: string; inp
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** A question with one line to answer it, asked as itself: its words above, the box and Save under them. */
+function LineForm({ choice: c, open, working, settled, onChoose }: ChoiceProps) {
+  const id = useId();
+  const input = c.inputs[0];
+  const [value, setValue] = useState(input.value);
+  if (settled) return null;
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!open || !value.trim()) return;
+    onChoose(undefined, { [input.key]: value.trim() });
+  }
+  return (
+    <form onSubmit={submit} className="appear grid min-w-0 grid-cols-1 gap-2">
+      <label htmlFor={id} className="font-semibold leading-tight">
+        {c.label}
+      </label>
+      <div className="flex min-w-0 items-center gap-2">
+        <input
+          id={id}
+          className="control !min-h-11 !py-2"
+          autoComplete="off"
+          maxLength={200}
+          placeholder={input.placeholder}
+          value={value}
+          disabled={!open}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        <Button type="submit" size="sm" variant="secondary" disabled={!open || !value.trim()}>
+          {working ? "Saving…" : c.action || "Save"}
+        </Button>
+      </div>
+    </form>
   );
 }
 

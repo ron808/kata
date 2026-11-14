@@ -10,7 +10,7 @@ import { isDuplicateKey } from "@/lib/companion/messages";
 import { valueText } from "@/lib/companion/fields";
 import { ThreadPatchSchema } from "@/lib/companion/schemas";
 import { capFirst } from "@/lib/companion/text";
-import { habitDone, logItem, saveThread, toThreadT, touch, withFields, withLog, withValue } from "@/lib/companion/threads";
+import { habitDone, logItem, saveThread, stepChange, toThreadT, touch, withFields, withLog, withValue } from "@/lib/companion/threads";
 import { dayDiff, parseDueAt } from "@/lib/companion/time";
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ threadId: string }> }) {
@@ -45,18 +45,13 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ threadId:
     if (data.shared !== undefined) set.shared = data.shared;
     if (data.archived !== undefined) set.archived = data.archived;
 
-    // On a habit Done means today, as it does in a check-in or in chat. Paused is how one stops.
-    const habitDay = t.kind === "habit" && data.status === "done";
-    if (habitDay) Object.assign(set, habitDone(t, c) ?? {});
-    const statusChanged = !habitDay && data.status !== undefined && data.status !== t.status;
-    if (statusChanged) {
-      set.status = data.status;
-      if (data.status === "done" && data.nextStep === undefined) set.nextStep = "";
-      if (!data.note) set.lastNote = "";
-    }
-    if (data.note) set.lastNote = data.note;
-    if (statusChanged || data.note) {
-      set.log = withLog(t.log, logItem(data.note ?? "", statusChanged ? (data.status ?? null) : null, "you", c.now));
+    // A step does the same here as in a check-in or in chat (stepChange): on a habit Done is today.
+    if (data.status !== undefined) {
+      Object.assign(set, stepChange(t, data.status, c, data.note ?? "") ?? {});
+      if (data.nextStep !== undefined) set.nextStep = data.nextStep;
+    } else if (data.note) {
+      set.lastNote = data.note;
+      set.log = withLog(t.log, logItem(data.note, null, "you", c.now));
       // A habit's lastTouchedAt is the last day it was done, so an edit doesn't count.
       if (t.kind !== "habit") Object.assign(set, touch(t, c));
     }

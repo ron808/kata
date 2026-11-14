@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { jsonError, requireUser } from "@/lib/api";
 import { checkLimit, limiters } from "@/lib/ratelimit/upstash";
 import { isGroqConfigured } from "@/lib/ai/groq";
-import { answerFreely, asksSomething, breakDown, busy, choose, converse, goTo, missionWords, type MaruExchange, type Seen } from "@/lib/companion/brain";
-import { answer, moodSaid, say } from "@/lib/companion/engine";
+import { answerFreely, asksSomething, breakDown, busy, choose, converse, goTo, missionWords, statusNow, type MaruExchange, type Seen } from "@/lib/companion/brain";
+import { answer, answerStep, moodSaid, say } from "@/lib/companion/engine";
 import { companionError } from "@/lib/companion/http";
 import { loadCompanion } from "@/lib/companion/load";
 import { toKataMessage } from "@/lib/companion/messages";
@@ -29,7 +29,7 @@ export async function GET() {
  */
 async function talk(userId: string, text: string, seen: Seen): Promise<MaruExchange> {
   // Before breakdowns: in focus, "give me a report" means the mission.
-  const went = (await goTo(userId, text)) ?? (await missionWords(userId, text)) ?? (await breakDown(userId, text));
+  const went = (await goTo(userId, text)) ?? (await missionWords(userId, text)) ?? (await breakDown(userId, text)) ?? (await statusNow(userId, text));
   if (went) return went;
   const mood = await moodSaid(userId, text);
   if (mood) return refreshing(mood);
@@ -58,7 +58,10 @@ export async function POST(request: Request) {
     const data = CompanionPostSchema.parse(await request.json().catch(() => null));
     const userId = session.user.id;
     let exchange: MaruExchange;
-    if ("messageId" in data && data.value.startsWith("do:")) {
+    if ("step" in data) {
+      // A thread's own step, from its card: the rules, no model.
+      exchange = refreshing(await answerStep(userId, data.messageId, data.thread, data.step));
+    } else if ("messageId" in data && data.value.startsWith("do:")) {
       // A choice Maru offered: it runs as stored, with what its form was filled in with, without the model.
       exchange = await choose(userId, data.messageId, data.value, data.edit, data.inputs);
     } else if ("messageId" in data && !data.value.startsWith("say:")) {

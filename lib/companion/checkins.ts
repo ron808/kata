@@ -48,8 +48,8 @@ export interface History {
 
 const reply = (label: string, value: string): IQuickReply => ({ label, value });
 
-/** "Did it" on a next-step check-in: the step is done and the thread moves on. */
-export const STEP_DONE = reply("Did it", "moving");
+/** "Did that" on a next-step check-in: the step is done and the thread moves on. */
+export const STEP_DONE = reply("Did that", "moving");
 /** Offered after a step is done, when there's no step after it. */
 export const LAST_STEP = reply("That was the last one", "done");
 export const SHARE_REPLIES = [reply("Share it", "share"), reply("Keep it here", "keep")];
@@ -58,12 +58,12 @@ const R = {
   unstuck: reply("Unstuck", "moving"),
   stillStuck: reply("Still stuck", "stuck"),
   done: reply("Done", "done"),
-  parkIt: reply("Park it", "paused"),
+  parkIt: reply("Pause it", "paused"),
   cameThrough: reply("It came through", "moving"),
   heardBack: reply("Heard back", "moving"),
   stillWaiting: reply("Still waiting", "waiting"),
   landed: reply("Landed", "done"),
-  later: reply("Ask me later", "later"),
+  later: reply("Not now", "later"),
   ready: reply("Ready", "moving"),
   notQuite: reply("Not quite", "stuck"),
   onTrack: reply("On track", "moving"),
@@ -78,7 +78,7 @@ const R = {
   stuck: reply("Stuck", "stuck"),
   waiting: reply("Waiting", "waiting"),
   paused: reply("Paused", "paused"),
-  allDone: reply("All done", "done"),
+  allDone: reply("All finished", "done"),
   workingOnIt: reply("Working on it", "moving"),
   allGood: reply("All good", "moving"),
   waitingOnThem: reply("Waiting on them", "waiting"),
@@ -111,8 +111,9 @@ const STALE_KINDS = new Set(["goal", "project", "learning", "health", "task", "o
 function tierOf(t: IThread, ctx: Ctx, history: History): Tier | null {
   if (t.archived || t.status === "done" || t.status === "paused") return null;
   const since = dayDiff(ctx.day, localDay(ctx.tz, t.lastTouchedAt));
-  const due = dueIn(t, ctx);
-  // A date comes first: on the day, what's stuck about it matters less than the day. Anything can have one.
+  // A habit goes by its rhythm, not a date: "was due on Monday" means nothing for drinking water.
+  const due = t.kind === "habit" ? null : dueIn(t, ctx);
+  // A date comes first: on the day, what's stuck about it matters less than the day. Anything else can have one.
   if (due === 0) return "event-today";
   if (due !== null && due < 0 && due >= -7) return "event-past";
   if (due !== null && due > 0 && due <= 3) return "event-soon";
@@ -242,7 +243,7 @@ export function checkinLine(p: Planned, ctx: Ctx, seed: number, evening = false)
       }
       const replies = t.kind === "person" ? [R.unstuck, R.stillStuck, R.parkIt] : [R.unstuck, R.stillStuck, R.done, R.parkIt];
       if (note && isShortPhrase(note)) {
-        const options = [`${when} ${note} held up ${r}. Still the case?`];
+        const options = [`${when} ${note} held up ${r}. Any movement?`];
         if (!activity) options.push(`${when} ${r} was stuck on ${note}. Any movement?`);
         return { text: pick(options, seed), replies };
       }
@@ -316,7 +317,7 @@ export function checkinLine(p: Planned, ctx: Ctx, seed: number, evening = false)
           replies,
         };
       }
-      return { text: pick([`${name} today?`, `Is there time for ${r} today?`], seed), replies };
+      return { text: `${name} today?`, replies };
     }
 
     case "stale": {
@@ -325,7 +326,7 @@ export function checkinLine(p: Planned, ctx: Ctx, seed: number, evening = false)
       return {
         text: pick(
           [
-            `${R0} hasn't come up since ${monthDayOf(lastDay)}. Still on?`,
+            `${R0} hasn't come up since ${monthDayOf(lastDay)}. Where is it now?`,
             `It's been ${count(days)} days since ${r} came up. Where is it now?`,
             `Haven't heard about ${r} in a while. How's it going?`,
           ],
@@ -375,7 +376,7 @@ export function eveningLine(t: IThread, morningAnswer: string | null | undefined
   const r = ref(t);
   const activity = refIsActivity(t);
   if (t.kind === "event" && dueIn(t, ctx) === 0) return { text: `How did ${r} go?`, replies: [R.wentWell, R.rough, R.didntHappen, R.later] };
-  if (t.kind === "habit") return { text: `Did ${r} happen today?`, replies: [R.done, R.notYet, R.pauseIt] };
+  if (t.kind === "habit") return { text: `${capFirst(habitName(t.title))} today?`, replies: [R.done, R.notYet, R.pauseIt] };
   if (t.status === "stuck") {
     const options = [`Any movement on ${r} today?`];
     if (!activity) options.push(`${capFirst(r)} was stuck earlier. Any movement since?`);

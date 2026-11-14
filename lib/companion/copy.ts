@@ -1,5 +1,5 @@
 import type { QuestionTag } from "@/lib/questions/bank";
-import type { RoleKey, ThreadStatus } from "@/lib/types";
+import type { RoleKey } from "@/lib/types";
 import { capFirst, count, joinList, pick } from "./text";
 import { dayDiff, monthDayOf, weekdayOf } from "./time";
 
@@ -128,35 +128,21 @@ export function openQuestion(role: RoleKey, interests: QuestionTag[], seed: numb
 
 // ── After a reply ────────────────────────────────────────────────────────────
 
+// Each goes with a receipt that already says what changed, so a line here only adds to it, and
+// never leaves an open question: what's worth writing down comes as a form.
 export const followUp = {
-  done: (r: string, seed: number) =>
-    pick([`Nice work on ${r}. What's next?`, `That's ${r} done. What's next?`, "Good. One less thing. What's next?"], seed),
-  doneShare: (r: string, seed: number) =>
-    pick([`Nice work on ${r}. Share it on your profile?`, `That's ${r} done. Want to share it on your profile?`], seed),
-  shared: "Shared on your profile. What's next?",
-  kept: "Kept here. What's next?",
-  habit: (streak: number, first: boolean, seed: number, rests = false) =>
-    streak <= 1
-      ? first
-        ? "Done. That's day one."
-        : "Done."
-      : pick([`Done. That's ${count(streak)}${rests ? "" : " days"} in a row.`, `Good. ${capFirst(count(streak))} in a row now.`], seed),
-  wentWell: "Glad it went well. What's next?",
+  done: (seed: number) => pick(["Nice work.", "One less thing on your mind.", "That's off your list."], seed),
+  doneShare: "Nice work. Share it on your profile?",
+  kept: "Kept here.",
+  wentWell: "Glad it went well.",
   rough: "Sorry it was rough. It's off your list now.",
-  eventDone: "Noted. What's next?",
-  stepDone: (r: string) => `Good. What's the next step on ${r}?`,
-  eventSoon: (weekday: string) => `Good. I'll check back before ${weekday}.`,
-  prepDone: (when: string) => (when === "today" ? "Good. One less thing before it starts." : `Good. One less thing before ${when}.`),
+  eventSoon: (weekday: string) => `I'll check back before ${weekday}.`,
+  prepDone: (when: string) => (when === "today" ? "One less thing before it starts." : `One less thing before ${when}.`),
   allSet: "Good. You're all set, then.",
   eventToday: "Good luck with it. I'll ask how it went.",
-  moving: (r: string, seed: number) => pick(["Good. What's the next step?", `What's the next step on ${r}?`], seed),
-  stuck: (knownBlocker: boolean) => (knownBlocker ? "What's in the way now?" : "What's in the way?"),
-  healthStuck: "Sorry to hear it. What would help?",
   better: "Good to hear.",
-  nextStepOnIt: "What's the next step on it?",
-  waiting: "On whom? I'll ask again tomorrow.",
-  waitingKnown: "Okay. I'll ask again tomorrow.",
-  paused: "Parked. I'll stop asking about it.",
+  waitingKnown: "I'll ask again tomorrow.",
+  paused: "I'll stop asking about it.",
   later: (seed: number) => pick(["Okay. I'll ask another day.", "Sure, another day."], seed),
   notYet: "Okay. No rush.",
   gone: "That one isn't on your list any more.",
@@ -182,17 +168,3 @@ export const ack = {
   noAnswer: (fact: string) => `I don't have an answer to that. ${fact}`,
   hello: (first: string) => `Hi${first ? `, ${first}` : ""}.`,
 };
-
-const STATUS_WORDS: Record<ThreadStatus, string> = {
-  moving: "moving again",
-  stuck: "stuck",
-  waiting: "waiting",
-  paused: "parked",
-  done: "done",
-};
-
-/** "The payments webhook is waiting on review from Priya." The note is used only when it reads inline. */
-export function statusLine(r: string, status: ThreadStatus, note: string): string {
-  if (note && (status === "waiting" || status === "stuck")) return `${capFirst(r)} is ${status} on ${note}.`;
-  return `${capFirst(r)} is ${STATUS_WORDS[status]}.`;
-}

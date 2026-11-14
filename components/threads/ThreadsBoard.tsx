@@ -7,7 +7,9 @@ import { useCompanion } from "@/components/shared/Companion";
 import { Icon } from "@/components/shared/Icon";
 import { KIND_LABEL, STATUS_LABEL, Status } from "@/components/shared/Status";
 import { useToast } from "@/components/shared/Toast";
-import { metaWithToday, onYourMind, showsStatus, stepOn, stepsFor, touchedPhrase } from "@/components/home/meta";
+import { metaWithToday, onYourMind, showsStatus, touchedPhrase } from "@/components/home/meta";
+import { ThreadSteps } from "@/components/maru/ThreadSteps";
+import { stepSaid } from "@/lib/companion/steps";
 import { patchThread } from "@/components/home/MindCard";
 import { ThreadMap } from "@/components/home/ThreadMap";
 import type { ThreadKind, ThreadT } from "@/lib/types";
@@ -295,20 +297,7 @@ function ThreadEditor({
     <div className="well appear space-y-5 p-4 sm:p-5" data-hue={t.hue % 8}>
       <div>
         <p className="mb-2 text-[0.875rem] font-semibold">Where it is</p>
-        <div className="scale" role="group" aria-label={`Where ${t.title} is`}>
-          {stepsFor(t.kind).map((s) => (
-            <button
-              key={s.value}
-              type="button"
-              className="scale-step scale-row"
-              aria-pressed={stepOn(t, s.value, today, tz)}
-              disabled={busy}
-              onClick={() => !stepOn(t, s.value, today, tz) && save({ status: s.value }, t.kind === "habit" && s.value === "done" ? `${t.title}: done for today.` : undefined)}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
+        <ThreadSteps thread={t} today={today} tz={tz} disabled={busy} onStep={(step) => save({ status: step }, t.kind === "habit" && step === "done" ? `${stepSaid(t, "done")}.` : undefined)} />
       </div>
 
       <ThreadFields thread={t} today={today} busy={busy} save={save} />

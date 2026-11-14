@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Conversation } from "@/components/home/Conversation";
-import type { KataMessage } from "@/lib/types";
+import type { KataMessage, ThreadT } from "@/lib/types";
 import { MaruMark } from "./Avatar";
 import { ASK_EVENT, HELLO_EVENT, helloDue, useCompanion, type Focus } from "./Companion";
 import { Icon } from "./Icon";
@@ -11,6 +11,7 @@ import { useToast } from "./Toast";
 
 interface Loaded {
   messages: KataMessage[];
+  threads: ThreadT[];
   week: (number | null)[];
   today: string;
   ai: boolean;
@@ -99,9 +100,9 @@ export function AskMaru({ pathname, focused = false }: { pathname: string; focus
     let live = true;
     fetch("/api/companion", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error())))
-      .then((d: { messages: KataMessage[]; mood: { week: (number | null)[] }; ai?: boolean; today?: string }) => {
+      .then((d: { messages: KataMessage[]; threads: ThreadT[]; mood: { week: (number | null)[] }; ai?: boolean; today?: string }) => {
         if (!live) return;
-        setLoaded({ messages: d.messages, week: d.mood.week, today: d.today ?? new Date().toISOString().slice(0, 10), ai: d.ai ?? true });
+        setLoaded({ messages: d.messages, threads: d.threads, week: d.mood.week, today: d.today ?? new Date().toISOString().slice(0, 10), ai: d.ai ?? true });
         requestAnimationFrame(() => document.getElementById("tell-maru-dock")?.focus());
       })
       .catch(() => {
@@ -131,6 +132,9 @@ export function AskMaru({ pathname, focused = false }: { pathname: string; focus
             <Conversation
               key={loaded.messages.length}
               initial={loaded.messages}
+              threads={loaded.threads}
+              tz={Intl.DateTimeFormat().resolvedOptions().timeZone}
+              onThreads={(threads) => setLoaded((l) => (l ? { ...l, threads } : l))}
               checkInLine=""
               moodWeek={loaded.week}
               today={loaded.today}

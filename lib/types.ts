@@ -229,6 +229,8 @@ export interface Choice {
   action: string;
   /** An editable draft's longest length; 0 for the usual 500. */
   max: number;
+  /** A thread offered as itself: its id, drawn as its card with its steps (see answerStep). */
+  thread: string | null;
 }
 
 export interface KataMessage {
