@@ -78,6 +78,22 @@ export const ReplySchema = z.object({ text: z.string().trim().min(1).max(500) })
 
 export const NotificationsPostSchema = z.object({ read: z.literal("all") });
 
+const Handle = z.string().min(1).max(64);
+const Id = z.string().refine(isObjectId, "Not found");
+
+/** One thing done on a shared thread (lib/social/sharing.ts). */
+export const SharingSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("share"), people: z.array(Handle).min(1).max(12) }),
+  z.object({ action: z.literal("unshare"), person: Handle }),
+  z.object({ action: z.literal("private") }),
+  z.object({ action: z.literal("leave") }),
+  z.object({ action: z.literal("post"), text: z.string().trim().min(1).max(400) }),
+  z.object({ action: z.literal("comment"), update: Id, text: z.string().trim().min(1).max(300) }),
+  z.object({ action: z.literal("cheer"), update: Id, kind: z.enum(REACTION_KINDS) }),
+]);
+
+export const SharingQuerySchema = z.object({ before: z.string().datetime().optional() });
+
 /** A missing or malformed JSON body fails validation (400) rather than throwing a 500. */
 export async function parseBody<T extends z.ZodType>(request: Request, schema: T): Promise<z.output<T>> {
   return schema.parse(await request.json().catch(() => undefined));

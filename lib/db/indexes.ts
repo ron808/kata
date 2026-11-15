@@ -15,6 +15,7 @@ import { Reaction } from "./models/Reaction";
 import { Reply } from "./models/Reply";
 import { Template } from "./models/Template";
 import { Thread } from "./models/Thread";
+import { ThreadUpdate } from "./models/ThreadUpdate";
 import { User } from "./models/User";
 
 export interface IndexReport {
@@ -42,6 +43,7 @@ const MODELS = [
   Reply,
   Template,
   Thread,
+  ThreadUpdate,
   User,
 ] as unknown as Model<unknown>[];
 

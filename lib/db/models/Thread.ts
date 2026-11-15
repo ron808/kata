@@ -70,6 +70,11 @@ export interface IThread {
   hue: number;
   /** Shown on the writer's profile as something they're working on. */
   shared: boolean;
+  /**
+   * Friends it's shared with (never the writer). They see its name, where it stands and its updates
+   * (ThreadUpdate), and add their own; its notes, next step, tags and numbers stay the writer's.
+   */
+  with: mongoose.Types.ObjectId[];
   source: "kata" | "page" | "manual";
   archived: boolean;
   /** Newest last, capped at 40 entries. */
@@ -124,6 +129,7 @@ const ThreadSchema = new Schema<IThread>(
     doneDays: { type: [String], default: [] },
     hue: { type: Number, default: 0 },
     shared: { type: Boolean, default: false },
+    with: { type: [{ type: Schema.Types.ObjectId, ref: "User" }], default: [] },
     source: { type: String, enum: ["kata", "page", "manual"], default: "manual" },
     archived: { type: Boolean, default: false },
     log: { type: [ThreadLogSchema], default: [] },
@@ -134,6 +140,8 @@ const ThreadSchema = new Schema<IThread>(
 
 ThreadSchema.index({ userId: 1, key: 1 }, { unique: true });
 ThreadSchema.index({ userId: 1, archived: 1, lastTouchedAt: -1 });
+// Threads shared with someone, for their "Shared with you".
+ThreadSchema.index({ with: 1, archived: 1 });
 
 export const Thread: Model<IThread> =
   mongoose.models.Thread ?? mongoose.model<IThread>("Thread", ThreadSchema);

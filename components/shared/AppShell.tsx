@@ -295,13 +295,14 @@ function useFocusMode(user: ShellUser): { on: boolean; theme: FocusTheme } {
 export const PULSE_EVENT = "kata:pulse";
 
 type Counts = { notifications: number; messages: number };
-type Pulse = Counts & { newestAt: string | null; checkedAt: string; latest: { text: string } | null };
+type Pulse = Counts & { newestAt: string | null; checkedAt: string; latest: { text: string; href: string | null } | null };
 
 /**
  * Notifications and messages waiting, kept fresh by `/api/pulse`: every 10 seconds while they're
  * using Kata, every 30 once they've gone quiet, never in a hidden tab, and at once when they come
  * back to it or change page. A notification that arrives while Kata is open shows as a toast, and
- * the notifications page takes it in. The same check is how friends see they're here.
+ * the notifications page takes it in, as a shared thread's page takes in its own. The same check is
+ * how friends see they're here.
  */
 function usePulse(atLoad: Counts, pathname: string): Counts {
   const router = useRouter();
@@ -345,8 +346,10 @@ function usePulse(atLoad: Counts, pathname: string): Counts {
         known.current = { notifications: data.notifications, messages: data.messages };
         setCounts(known.current);
         const reading = page.current === "/notifications";
-        if (data.latest && !reading) toast(data.latest.text);
-        if (reading && data.notifications > before.notifications) router.refresh();
+        // News about the shared thread they're looking at refreshes it instead of toasting.
+        const here = Boolean(data.latest?.href) && data.latest?.href === page.current;
+        if (data.latest && !reading && !here) toast(data.latest.text);
+        if ((reading && data.notifications > before.notifications) || here) router.refresh();
         since.current = data.newestAt ?? since.current ?? data.checkedAt;
       }
       const quiet = Date.now() - lastInput.current > 2 * 60_000;

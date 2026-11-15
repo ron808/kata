@@ -4,6 +4,7 @@ import { Moment, REACTION_KINDS, type IMoment, type ReactionKind } from "@/lib/d
 import { Reaction } from "@/lib/db/models/Reaction";
 import type { IReply } from "@/lib/db/models/Reply";
 import type { INotification } from "@/lib/db/models/Notification";
+import { Thread } from "@/lib/db/models/Thread";
 import type { MomentT, NotificationT, PersonT, ReplyT } from "@/lib/types";
 import { relationsTo, type Relation } from "./visibility";
 
@@ -21,7 +22,7 @@ type MomentDoc = Pick<
   "_id" | "userId" | "text" | "kind" | "tags" | "threadTitle" | "visibility" | "reactions" | "replyCount" | "createdAt"
 >;
 type ReplyDoc = Pick<IReply, "_id" | "userId" | "text" | "createdAt">;
-type NotificationDoc = Pick<INotification, "_id" | "actorId" | "kind" | "momentId" | "reaction" | "read" | "createdAt">;
+type NotificationDoc = Pick<INotification, "_id" | "userId" | "actorId" | "kind" | "momentId" | "threadId" | "reaction" | "read" | "createdAt">;
 type Named<T> = T & { handle: string };
 
 /** People without a handle have no public presence, so they never appear in what others see. */
@@ -125,7 +126,8 @@ export function toReply(reply: ReplyDoc, author: Named<AuthorDoc>, viewerId: str
 export function toNotification(
   notification: NotificationDoc,
   actor: Named<AuthorDoc>,
-  momentText: string | null
+  momentText: string | null,
+  threadTitle: string | null = null
 ): NotificationT {
   return {
     _id: String(notification._id),
@@ -133,6 +135,8 @@ export function toNotification(
     actor: { handle: actor.handle, name: actor.name, hue: hueOf(actor) },
     momentId: notification.momentId ? String(notification.momentId) : null,
     momentText,
+    threadId: notification.threadId ? String(notification.threadId) : null,
+    threadTitle,
     reaction: notification.reaction ?? null,
     read: notification.read,
     createdAt: notification.createdAt.toISOString(),
@@ -188,15 +192,24 @@ export async function repliesFor(viewerId: string, replies: ReplyDoc[]): Promise
 
 export async function notificationsFor(items: NotificationDoc[]): Promise<NotificationT[]> {
   const momentIds = items.flatMap((n) => (n.momentId ? [n.momentId] : []));
-  const [actors, moments] = await Promise.all([
+  const threadIds = items.flatMap((n) => (n.threadId ? [n.threadId] : []));
+  const [actors, moments, threads] = await Promise.all([
     authorsById(items.map((n) => n.actorId)),
     momentIds.length ? Moment.find({ _id: { $in: momentIds } }).select("text").lean() : [],
+    threadIds.length ? Thread.find({ _id: { $in: threadIds } }).select("userId title with archived").lean() : [],
   ]);
   const texts = new Map(moments.map((m) => [String(m._id), m.text]));
+  const shared = new Map(threads.map((t) => [String(t._id), t]));
   return items.flatMap((n) => {
     const actor = actors.get(String(n.actorId));
     const momentText = n.momentId ? texts.get(String(n.momentId)) : null;
     // A moment that has since been deleted takes its notifications with it.
-    return actor && momentText !== undefined ? [toNotification(n, actor, momentText)] : [];
+    if (!actor || momentText === undefined) return [];
+    if (!n.threadId) return [toNotification(n, actor, momentText)];
+    // So does a shared thread they can't see any more: deleted, archived, or no longer shared with them.
+    const t = shared.get(String(n.threadId));
+    const theirs = t && String(t.userId) === String(n.userId);
+    const sees = t && (theirs || (!t.archived && (t.with ?? []).some((w) => String(w) === String(n.userId))));
+    return sees ? [toNotification(n, actor, null, t.title)] : [];
   });
 }

@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * NotificationList — /notifications under its header: who followed you, reacted or replied,
- * newest first, each linking to the person or the moment. Viewing the page marks everything
+ * NotificationList — /notifications under its header: who followed you, reacted or replied, and
+ * what's new on threads shared with you or by you, newest first, each linking to the person, the
+ * moment or the thread. Viewing the page marks everything
  * read (then refreshes, so the bell clears); what was new stays marked until "Mark all read".
  * Props: items, unread, myHandle (for links to your moments), extras (follow-back people and
  * reply texts, from app/(app)/notifications/extras.ts).
@@ -21,7 +22,7 @@ import { FollowButton } from "./FollowButton";
 import { REACTION_LABEL } from "./labels";
 import { Ago } from "./time";
 
-const BADGE: Record<NotificationT["kind"], IconName> = { follow: "user", reaction: "star", reply: "chat" };
+const BADGE: Record<NotificationT["kind"], IconName> = { follow: "user", reaction: "star", reply: "chat", shared: "people", update: "pen", comment: "chat", cheer: "star" };
 
 function reactionPhrase(kind: ReactionKind | null) {
   if (kind === "hug") return { before: "sent a", after: "for" };
@@ -75,7 +76,7 @@ export function NotificationList({
     <>
       <PageHeader
         title="Notifications"
-        lede="Who followed you, and who answered what you shared."
+        lede="Who followed you, who answered what you shared, and what’s new on shared threads."
         actions={
           items.length ? (
             <Button variant="secondary" onClick={markAll} disabled={!fresh.size}>
@@ -100,7 +101,7 @@ export function NotificationList({
               </Link>
             }
           >
-            Nothing here yet. When someone follows you, reacts to a moment or replies, you’ll see it here.
+            Nothing here yet. When someone follows you, answers a moment or adds to a thread you share, you’ll see it here.
           </EmptyNote>
         </div>
       )}
@@ -158,13 +159,33 @@ function Row({
   person?: PersonT;
   reply?: string;
 }) {
-  const href =
-    n.kind === "follow" || !n.momentId ? `/u/${n.actor.handle}` : myHandle ? `/u/${myHandle}/m/${n.momentId}` : "/people";
+  const href = n.threadId
+    ? `/threads/${n.threadId}`
+    : n.kind === "follow" || !n.momentId
+      ? `/u/${n.actor.handle}`
+      : myHandle
+        ? `/u/${myHandle}/m/${n.momentId}`
+        : "/people";
   const excerpt = n.momentText ? <q className="font-medium text-ink/85 [quotes:'‘'_'’']">{n.momentText}</q> : null;
+  const thread = <span className="font-semibold">{n.threadTitle ?? "a thread"}</span>;
 
   let what: ReactNode;
   if (n.kind === "follow") {
     what = <> followed you.</>;
+  } else if (n.kind === "shared") {
+    what = <> shared {thread} with you.</>;
+  } else if (n.kind === "update") {
+    what = <> added an update to {thread}.</>;
+  } else if (n.kind === "comment") {
+    what = <> commented on {thread}.</>;
+  } else if (n.kind === "cheer") {
+    const { before, after } = reactionPhrase(n.reaction);
+    what = (
+      <>
+        {" "}
+        {before} <span className="tag mx-0.5 align-[0.1em]">{n.reaction ? REACTION_LABEL[n.reaction] : "a cheer"}</span> {after} your update on {thread}
+      </>
+    );
   } else if (n.kind === "reaction") {
     const { before, after } = reactionPhrase(n.reaction);
     what = (

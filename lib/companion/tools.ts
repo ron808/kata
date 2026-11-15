@@ -238,7 +238,7 @@ const TOOLS: Record<string, ChatCompletionTool> = {
       next_step: { type: "string", description: "The very next action. Empty clears it." },
       note: { type: "string", description: "Where it stands, in their words. For stuck or waiting: on what." },
       due: { type: "string", description: "YYYY-MM-DD, or empty to clear." },
-      shared: { type: "boolean", description: "Show it on their profile." },
+      shared: { type: "boolean", description: "Show it on their profile, for anyone who visits it. Never for sharing with friends: that's open_page threads." },
       track: TRACK,
       untrack: { type: "array", items: { type: "string" }, description: "Names to stop keeping track of." },
     },
@@ -288,6 +288,7 @@ const TOOLS: Record<string, ChatCompletionTool> = {
         enum: ["home", "today", "pages", "letters", "breakdowns", "missions", "focus", "threads", "memories", "people", "find_people", "notifications", "gallery", "builder", "settings", "profile"],
       },
       handle: { type: "string", description: "For a profile: whose. Leave out for their own." },
+      thread: { type: "string", description: "For threads: one of theirs, by name, to open its own page, where it's shared with friends." },
     },
     ["page"]
   ),
@@ -655,7 +656,12 @@ async function updateThread(turn: Turn, args: Args): Promise<string> {
   } else if (str(args.due)) {
     changes.push("the due date wasn't YYYY-MM-DD, so it wasn't changed");
   }
-  if (typeof args.shared === "boolean") {
+  // On a profile anyone sees it, so only when they said so: "share it with Mira" is picking friends on its page.
+  let opened = false;
+  if (args.shared === true && !PROFILE_SAID.test(turn.said)) {
+    openThreadPage(turn, t);
+    opened = true;
+  } else if (typeof args.shared === "boolean") {
     if (args.shared && !ctx.user.handle) throw new Unable(NEEDS_PROFILE);
     set.shared = args.shared;
     changes.push(args.shared ? "shown on your profile" : "hidden from your profile");
@@ -674,7 +680,10 @@ async function updateThread(turn: Turn, args: Args): Promise<string> {
     if (noRoom.length) changes.push(`no room for ${noRoom.join(", ")}: a thread keeps ${FIELDS_MAX} at most`);
     if (!added.length && !dropped.length && !noRoom.length) changes.push("updated what it tracks");
   }
-  if (!Object.keys(set).length) throw new Unable(`Nothing changed on “${t.title}”${changes.length ? `: ${changes.join("; ")}` : ""}.`);
+  if (!Object.keys(set).length) {
+    if (opened) return SHARE_PAGE(t.title);
+    throw new Unable(`Nothing changed on “${t.title}”${changes.length ? `: ${changes.join("; ")}` : ""}.`);
+  }
 
   if (logStatus || note) set.log = withLog(t.log, logItem(note ?? turn.said.slice(0, 200), logStatus, "you", ctx.now));
   // A habit's lastTouchedAt is the last day it was done, so only the streak moves it.
@@ -1789,6 +1798,17 @@ const PAGES: Record<string, string> = {
   settings: "/settings",
 };
 
+// Their words name the profile ("show it on my profile", "make it public"); sharing with friends doesn't.
+const PROFILE_SAID = /\b(?:profile|public)\b/i;
+const SHARE_PAGE = (title: string) => `Opened ${title}'s own page, where they pick friends to share it with. You don't share it for them.`;
+
+/** One thread's own page: who it's shared with and its updates, or the friends to pick. */
+function openThreadPage(turn: Turn, t: Pick<IThread, "_id" | "title" | "hue" | "with">) {
+  const href = `/threads/${t._id}${t.with?.length ? "" : "?share=1"}`;
+  turn.actions.push({ type: "navigate", href });
+  receipt(turn, "open", `Opened ${t.title}`, t.with?.length ? "Shared with friends" : "Pick friends to share it with", href, t.hue);
+}
+
 async function openPage(turn: Turn, args: Args): Promise<string> {
   const page = str(args.page) ?? "";
   if (page === "profile") {
@@ -1797,6 +1817,13 @@ async function openPage(turn: Turn, args: Args): Promise<string> {
     turn.actions.push({ type: "navigate", href: `/u/${handle}` });
     receipt(turn, "open", `Opened @${handle}`, "", `/u/${handle}`);
     return `Opening @${handle}.`;
+  }
+  const named = page === "threads" ? str(args.thread) : undefined;
+  if (named) {
+    const t = await findThread(turn.ctx, named);
+    if (!t) throw new Unable(`There's no thread called ${named}.`);
+    openThreadPage(turn, t);
+    return SHARE_PAGE(t.title);
   }
   const href = PAGES[page];
   if (!href) throw new Unable(`There's no page called ${page}.`);

@@ -72,6 +72,7 @@ Tools
 - Today's page: write_on_page adds their words; add_page_question, remove_page_question and rename_page_question change the questions it asks every day; use_page switches to another of their saved pages.
 - Settings: set_check_in, set_interests, update_profile, set_names (what they call you, what you call them, the colour you wear), set_theme. A new name or bio from update_profile is a draft they check and save with a tap. open_page goes anywhere in the app.
 - People: share_moment drafts a post of theirs; draft_replies drafts replies to a post on their screen; draft_message drafts a private message to someone by @handle (people can only write once they follow each other); follow and unfollow by @handle; clear_notifications. Nothing others would see is posted until they tap it. When they want to answer a post on their screen or don't know what to write, call draft_replies at once; don't offer to. Asked what you think of a post: two short lines on what stands out and how they might answer, then offer drafting as an answer to tap. A reply you draft for them claims nothing about them you don't know from their threads, memories or pages: where it needs a fact (a book, a place), leave a blank like [book] for them to fill in.
+- A thread can be shared with a few friends, who then see where it stands and add their own updates. Only they choose who, on its page: asked to share one, open_page threads with the thread's name. Never say you shared a thread, and never put anything on a shared one. Asked who sees a thread, answer in words from the facts (no one else on Kata, unless it says shared or on their profile) and open nothing.
 - Lasting facts (people, preferences, routines, plans): remember. Not moods. Asked to forget something: forget.
 - "What did I write about…", "when did I last…": search_pages, then answer only from what it finds, with the day.
 - Asked to plan their day or evening: plan_day works it out from their threads, with times. Never write a plan yourself.
@@ -119,6 +120,7 @@ function threadLine(t: ThreadT, ctx: EngineCtx): string {
   if (t.kind === "habit" && t.streak > 0) parts.push(habitRun(t.streak, t.title));
   for (const f of t.fields) parts.push(fieldLine(f, ctx));
   if (t.shared) parts.push("on their profile");
+  if (t.sharing) parts.push(`shared with ${t.sharing} ${t.sharing === 1 ? "friend" : "friends"}, who see where it stands`);
   parts.push(`last mentioned ${when(t.lastTouchedAt, ctx)}`);
   return `- ${parts.join(" · ")}`;
 }
@@ -218,7 +220,7 @@ async function contextOf(
       ? `Posts on their screen, top to bottom:\n${screenLines(screen, here)}${focus === "asking" ? "\nThey're asking about post [1]." : focus === "opened" ? "\nThey opened you from post [1]." : ""}`
       : "",
     memories.length ? `What you remember:\n${memories.join("\n")}` : "What you remember: nothing yet.",
-    threads.length ? `Threads, most pressing first:\n${threads.slice(0, 10).map((t) => threadLine(t, ctx)).join("\n")}` : "Threads: none yet.",
+    threads.length ? `Threads, most pressing first (no one else sees one unless it says shared or on their profile):\n${threads.slice(0, 10).map((t) => threadLine(t, ctx)).join("\n")}` : "Threads: none yet.",
     missions.length ? `Missions going: ${missions.map((m) => `"${missionName(m, ctx.day)}" (${tally(m.tasks).left} left)`).join(", ")}.` : "",
     `Mood over the last seven days, oldest first: ${moodLine}.`,
     pageLines.length ? `Latest pages:\n${pageLines.join("\n")}` : "No pages written yet.",
@@ -275,10 +277,15 @@ const lines = (sentence: string) => sentence.split("\n");
 const notesToSelf = (text: string | null | undefined) =>
   (text ?? "").split(/(?<=[.!?])[ \t]+/).some((sentence) => lines(sentence).some((line) => SELF_NOTE.test(line.trim())));
 
+// Their pages and threads are read by a model run by Groq, so nothing of theirs is seen by "only you".
+const ONLY_YOU = /\b(?:only you(?: can)? see|only you sees) (it|them|this|these|that)\b|\b(?:it['’]?s|it is) (?:only visible to you|visible only to you)\b/gi;
+const noOneElse = (said: string, what: string | undefined) => `${/^[A-Z]/.test(said) ? "No" : "no"} one else on Kata sees ${what ?? "it"}`;
+
 /** Some models still think out loud, sign their name, run sentences together, sign off or leave themselves notes. */
 function clean(text: string | null | undefined, name: string): string {
   const tidy = (text ?? "")
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(ONLY_YOU, noOneElse)
     .replace(new RegExp(`^\\s*(?:kata|maru|${escaped(name)}):\\s*`, "i"), "")
     // "Added it.Your page…"
     .replace(/([\p{Ll}\d][.!?])(?=\p{Lu})/gu, "$1 ")

@@ -16,13 +16,16 @@ import { Reaction } from "@/lib/db/models/Reaction";
 import { Reply } from "@/lib/db/models/Reply";
 import { Template } from "@/lib/db/models/Template";
 import { Thread } from "@/lib/db/models/Thread";
+import { forgetThreads, leaveAllShared } from "@/lib/social/sharing";
 import { User } from "@/lib/db/models/User";
 import { formatDate } from "@/lib/utils/dates";
 
 /**
  * Starting fresh and leaving. Start fresh clears what a writer picks and keeps the account, profile, handle,
  * people, messages and page layouts; deleting removes the account and everything in it. Either way, what they
- * left on other people's posts comes off with it, and the counts others see stay true.
+ * left on other people's posts comes off with it, and the counts others see stay true. Their threads take
+ * everything added to them with them, shared ones included; what they added to threads friends shared with
+ * them stays on start fresh, like their messages, and goes with the account.
  */
 
 /** What start fresh can clear. Breakdowns go with pages or threads, since they're worked out from them. */
@@ -117,10 +120,14 @@ async function removeConversations(uid: Types.ObjectId): Promise<void> {
   await Conversation.deleteMany({ _id: { $in: ids } });
 }
 
+const threadIds = async (uid: Types.ObjectId) => (await Thread.find({ userId: uid }).select("_id").lean()).map((t) => t._id);
+
 export async function startFresh(userId: string, parts: readonly FreshPart[], setupAgain: boolean): Promise<void> {
   const uid = idOf(userId);
   const has = (p: FreshPart) => parts.includes(p);
+  const threads = has("threads") ? await threadIds(uid) : [];
   await Promise.all([
+    forgetThreads(threads),
     ...(has("pages") ? [Entry.deleteMany({ userId: uid }), Digest.deleteMany({ userId: uid })] : []),
     ...(has("threads") ? [Thread.deleteMany({ userId: uid }), Mission.deleteMany({ userId: uid })] : []),
     ...(has("pages") || has("threads") ? [Breakdown.deleteMany({ userId: uid })] : []),
@@ -142,6 +149,8 @@ export async function deleteAccount(userId: string): Promise<void> {
   await removePosts(uid);
   await removeFollows(uid);
   await removeConversations(uid);
+  await leaveAllShared(uid);
+  await forgetThreads(await threadIds(uid));
   await Promise.all([
     Entry.deleteMany({ userId: uid }),
     Digest.deleteMany({ userId: uid }),

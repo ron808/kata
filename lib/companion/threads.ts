@@ -7,6 +7,7 @@ import {
   type IThreadLog,
   type ThreadStatus,
 } from "@/lib/db/models/Thread";
+import { recordStep, type Stepped } from "@/lib/social/threadSteps";
 import type { ThreadT } from "@/lib/types";
 import type { KnownThread, ThreadCandidate } from "./extract";
 import { FIELDS_MAX, fieldKey, habitGap, type FieldSpec } from "./fields";
@@ -176,6 +177,7 @@ export function toThreadT(t: IThread, ctx: Ctx): ThreadT {
     streak: liveStreak(t, ctx),
     hue: t.hue ?? 0,
     shared: Boolean(t.shared),
+    sharing: (t.with ?? []).length,
     archived: Boolean(t.archived),
     log: (t.log ?? []).map((l) => ({
       at: new Date(l.at).toISOString(),
@@ -300,7 +302,12 @@ export async function createThread(ctx: Ctx, input: NewThread, hue: number): Pro
 }
 
 export async function saveThread(ctx: Ctx, id: Types.ObjectId | string, set: Partial<IThread>): Promise<IThread | null> {
-  return Thread.findOneAndUpdate({ _id: id, userId: ctx.userId }, { $set: set }, { returnDocument: "after" }).lean<IThread>();
+  // A step set anywhere shows on a shared thread, so read where it stood first.
+  const stepped = "status" in set || "doneDays" in set;
+  const before = stepped ? await Thread.findOne({ _id: id, userId: ctx.userId }).select("userId kind status doneDays with").lean<Stepped>() : null;
+  const saved = await Thread.findOneAndUpdate({ _id: id, userId: ctx.userId }, { $set: set }, { returnDocument: "after" }).lean<IThread>();
+  if (saved && before?.with?.length) await recordStep(before, saved);
+  return saved;
 }
 
 /** What a mention in the writer's text changes on a thread Kata already keeps. */
@@ -431,6 +438,7 @@ export async function reconcilePage(ctx: Ctx, kept: Set<string>): Promise<void> 
     const provisional =
       t.source === "page" &&
       !t.shared &&
+      !t.with?.length &&
       t.touchCount <= 1 &&
       t.log.every((l) => l.from === "page") &&
       localDay(ctx.tz, t.createdAt) === ctx.day;

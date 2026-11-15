@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Avatar } from "@/components/shared/Avatar";
 import { Button } from "@/components/shared/Button";
 import { useCompanion } from "@/components/shared/Companion";
 import { Icon } from "@/components/shared/Icon";
@@ -12,7 +14,9 @@ import { ThreadSteps } from "@/components/maru/ThreadSteps";
 import { stepSaid } from "@/lib/companion/steps";
 import { patchThread } from "@/components/home/MindCard";
 import { ThreadMap } from "@/components/home/ThreadMap";
-import type { ThreadKind, ThreadT } from "@/lib/types";
+import { Ago } from "@/components/people/time";
+import type { SharedRowT, ThreadKind, ThreadT, Who } from "@/lib/types";
+import { Faces, firstOf, listOf } from "./SharingBits";
 import { ThreadFields } from "./ThreadFields";
 
 const KINDS = Object.keys(KIND_LABEL) as ThreadKind[];
@@ -30,17 +34,24 @@ const GROUPS: { title: string; test: (t: ThreadT, today: string) => boolean }[] 
 
 /**
  * Everything Kata keeps track of: the map of what's on your mind, every thread by state,
- * and an editor for the one you open. `?t=<id>` opens a thread (home links here).
+ * and an editor for the one you open. `?t=<id>` opens a thread (home links here). Threads
+ * friends shared with you are listed after what's on your mind, each opening its own page.
  */
 export function ThreadsBoard({
   initial,
   today,
   tz,
+  withMe = [],
+  people = {},
   aside,
 }: {
   initial: ThreadT[];
   today: string;
   tz: string;
+  /** Friends' threads shared with them. */
+  withMe?: SharedRowT[];
+  /** Who each of their shared threads is shared with, by thread. */
+  people?: Record<string, Who[]>;
   /** More of Kata's model of you, under the map (what it remembers). */
   aside?: ReactNode;
 }) {
@@ -161,10 +172,12 @@ export function ThreadsBoard({
             </p>
           </div>
         ) : null}
-        {GROUPS.map((g) => {
+        {GROUPS.map((g, i) => {
           const items = threads.filter((t) => g.test(t, today));
-          if (!items.length) return null;
-          return (
+          // Friends' threads come after what's on your own mind.
+          const shared = i === 0 ? <SharedWithYou key="shared" rows={withMe} /> : null;
+          if (!items.length) return shared;
+          return [
             <section key={g.title} aria-label={g.title} className="card p-2 sm:p-3">
               <h2 className="px-3 pb-1 pt-3 font-display text-display-s">
                 {g.title} <span className="text-ink/45 tabular-nums">{items.length}</span>
@@ -184,6 +197,7 @@ export function ThreadsBoard({
                         <span className="block truncate font-semibold">{t.title}</span>
                         <span className="block truncate text-[0.8125rem] text-ink/65">
                           {KIND_LABEL[t.kind]} · {metaWithToday(t, today, tz)}
+                          {t.sharing ? ` · with ${listOf((people[t._id] ?? []).map((p) => firstOf(p.name))) || `${t.sharing} ${t.sharing === 1 ? "friend" : "friends"}`}` : ""}
                           {t.shared ? " · on your profile" : ""}
                         </span>
                       </span>
@@ -192,22 +206,61 @@ export function ThreadsBoard({
                     </button>
                     {open === t._id ? (
                       <div id={`edit-${t._id}`} className="px-1 pb-3 sm:px-3">
-                        <ThreadEditor thread={t} today={today} tz={tz} onSaved={update} onClose={() => select(null)} onRemoved={() => remove(t._id)} />
+                        <ThreadEditor
+                          thread={t}
+                          people={people[t._id] ?? []}
+                          today={today}
+                          tz={tz}
+                          onSaved={update}
+                          onClose={() => select(null)}
+                          onRemoved={() => remove(t._id)}
+                        />
                       </div>
                     ) : null}
                   </li>
                 ))}
               </ul>
-            </section>
-          );
+            </section>,
+            shared,
+          ];
         })}
       </div>
     </div>
   );
 }
 
+/** Threads friends shared with you, most recently added to first, each opening its page. */
+function SharedWithYou({ rows }: { rows: SharedRowT[] }) {
+  if (!rows.length) return null;
+  return (
+    <section aria-label="Shared with you" className="card p-2 sm:p-3">
+      <h2 className="px-3 pb-1 pt-3 font-display text-display-s">
+        Shared with you <span className="text-ink/45 tabular-nums">{rows.length}</span>
+      </h2>
+      <ul>
+        {rows.map((r) => (
+          <li key={r._id} className="rule border-t-2 first:border-t-0">
+            <Link href={`/threads/${r._id}`} className="flex min-h-16 w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-ink/[0.04]">
+              <Avatar name={r.owner.name} hue={r.owner.hue} size={36} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-semibold">{r.title}</span>
+                <span className="block truncate text-[0.8125rem] text-ink/65">
+                  {firstOf(r.owner.name)}’s · with you{r.with.length ? ` and ${listOf(r.with.map((p) => firstOf(p.name)))}` : ""} · <Ago iso={r.lastAt} />
+                </span>
+              </span>
+              {r.kind !== "habit" ? <Status status={r.status} /> : null}
+              <Icon name="arrow" className="h-4 w-4 shrink-0 text-ink/55" />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function ThreadEditor({
   thread: t,
+  people,
   today,
   tz,
   onSaved,
@@ -215,6 +268,8 @@ function ThreadEditor({
   onRemoved,
 }: {
   thread: ThreadT;
+  /** Who it's shared with. */
+  people: Who[];
   today: string;
   tz: string;
   onSaved: (t: ThreadT) => void;
@@ -387,6 +442,17 @@ function ThreadEditor({
       ) : null}
 
       <div className="rule flex flex-wrap items-center gap-2 border-t-2 pt-4">
+        {t.archived ? null : t.sharing ? (
+          <Link href={`/threads/${t._id}`} className="chip chip-sm max-w-full">
+            {people.length ? <Faces people={people} size={22} max={3} /> : <Icon name="people" className="h-4 w-4" />}
+            <span className="truncate">Shared with {listOf(people.map((p) => firstOf(p.name))) || `${t.sharing} ${t.sharing === 1 ? "friend" : "friends"}`}</span>
+          </Link>
+        ) : (
+          <Link href={`/threads/${t._id}?share=1`} className="chip chip-sm">
+            <Icon name="people" className="h-4 w-4" />
+            Share with a few people
+          </Link>
+        )}
         <button
           type="button"
           className="chip chip-sm"
@@ -402,7 +468,19 @@ function ThreadEditor({
             Bring back
           </button>
         ) : (
-          <button type="button" className="chip chip-sm" disabled={busy} onClick={() => save({ archived: true }, `Archived. It comes back if you mention ${t.title} again.`).then((s) => s && onClose())}>
+          <button
+            type="button"
+            className="chip chip-sm"
+            disabled={busy}
+            onClick={() =>
+              save(
+                { archived: true },
+                t.sharing
+                  ? `Archived: ${listOf(people.map((p) => firstOf(p.name))) || "the friends it’s shared with"} won’t see it until you bring it back.`
+                  : `Archived. It comes back if you mention ${t.title} again.`
+              ).then((s) => s && onClose())
+            }
+          >
             Archive
           </button>
         )}

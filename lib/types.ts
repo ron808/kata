@@ -183,6 +183,8 @@ export interface ThreadT {
   streak: number;
   hue: number;
   shared: boolean;
+  /** How many friends it's shared with (their names come with the Threads page). */
+  sharing: number;
   archived: boolean;
   log: { at: string; text: string; status: ThreadStatus | null; from: "you" | "kata" | "page" }[];
   fields: ThreadField[];
@@ -357,13 +359,91 @@ export interface ThreadOpenT {
 
 export interface NotificationT {
   _id: string;
-  kind: "follow" | "reaction" | "reply";
+  kind: "follow" | "reaction" | "reply" | "shared" | "update" | "comment" | "cheer";
   actor: Pick<PersonT, "handle" | "name" | "hue">;
   momentId: string | null;
   momentText: string | null;
+  /** A shared thread's, for the thread kinds. */
+  threadId: string | null;
+  threadTitle: string | null;
   reaction: ReactionKind | null;
   read: boolean;
   createdAt: string;
+}
+
+// ── Shared threads ───────────────────────────────────────────────────────────
+
+/** Someone on a shared thread, as a profile shows them. Everyone on one has a handle. */
+export type Who = Pick<PersonT, "handle" | "name" | "hue">;
+
+/** A friend who could be added to a thread: only those who follow back can be. */
+export interface FriendT extends Who {
+  mutual: boolean;
+}
+
+export interface UpdateCommentT {
+  _id: string;
+  /** A handle, in the thread's `people`. */
+  by: string;
+  text: string;
+  at: string;
+}
+
+/** Something on a shared thread: someone's update, a step its writer set, or who it's shared with. */
+export interface ThreadUpdateT {
+  _id: string;
+  kind: "update" | "note";
+  by: string;
+  text: string;
+  status: ThreadStatus | null;
+  /** A habit's step: the day it counted. */
+  day: string | null;
+  what: "shared" | "unshared" | "private" | "left" | null;
+  people: string[];
+  comments: UpdateCommentT[];
+  /** Who gave each, by handle. */
+  cheers: Partial<Record<ReactionKind, string[]>>;
+  at: string;
+}
+
+/** A thread as its writer and the friends it's shared with see it: never its notes, next step, tags or numbers. */
+export interface SharedThreadT {
+  _id: string;
+  title: string;
+  kind: ThreadKind;
+  status: ThreadStatus;
+  hue: number;
+  dueAt: string | null;
+  streak: number;
+  /** A habit: today's done, on its writer's day. */
+  doneToday: boolean;
+  lastTouchedAt: string;
+  archived: boolean;
+  /** The viewer's own thread. */
+  mine: boolean;
+  /** Handles: whose it is, who's looking, and who it's shared with. */
+  owner: string;
+  me: string;
+  with: string[];
+  /** Everyone it names, by handle, including people who have since left. */
+  people: Record<string, Who>;
+  /** Newest first. */
+  updates: ThreadUpdateT[];
+  /** Older updates than these. */
+  more: boolean;
+}
+
+/** A thread someone shared with you, in a list. */
+export interface SharedRowT {
+  _id: string;
+  title: string;
+  kind: ThreadKind;
+  status: ThreadStatus;
+  hue: number;
+  owner: Who;
+  with: Who[];
+  /** When anything was last added, or when it was shared. */
+  lastAt: string;
 }
 
 // ── Breakdowns ────────────────────────────────────────────────────────────────

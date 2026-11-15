@@ -10,6 +10,7 @@ import { isObjectId } from "./db";
 import { hueOf } from "./dto";
 import { HANDLE_PATTERN, NEEDS_HANDLE, normalizeHandle } from "./handles";
 import { seesActivity } from "./presence";
+import { blockShared } from "./sharing";
 
 /*
  * Messages between two people who follow each other. Following is one tap, but writing takes
@@ -231,5 +232,6 @@ export async function setBlocked(me: string, handle: string, blocked: boolean): 
     },
     { upsert: blocked }
   );
+  if (blocked) await blockShared(mine, them._id);
   return { ok: true, value: { blocked } };
 }

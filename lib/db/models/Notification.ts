@@ -1,7 +1,11 @@
 import mongoose, { Schema, type Model } from "mongoose";
 import { REACTION_KINDS, type ReactionKind } from "./Moment";
 
-export const NOTIFICATION_KINDS = ["follow", "reaction", "reply"] as const;
+/**
+ * Moments: follow, reaction, reply. Shared threads: shared (a thread was shared with you), update
+ * (someone added to one you're on), comment (on your update), cheer (your update was cheered).
+ */
+export const NOTIFICATION_KINDS = ["follow", "reaction", "reply", "shared", "update", "comment", "cheer"] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
 export interface INotification {
@@ -12,6 +16,8 @@ export interface INotification {
   actorId: mongoose.Types.ObjectId;
   kind: NotificationKind;
   momentId: mongoose.Types.ObjectId | null;
+  /** The shared thread it's about. */
+  threadId?: mongoose.Types.ObjectId | null;
   reaction: ReactionKind | null;
   read: boolean;
   createdAt: Date;
@@ -23,6 +29,7 @@ const NotificationSchema = new Schema<INotification>(
     actorId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     kind: { type: String, enum: NOTIFICATION_KINDS, required: true },
     momentId: { type: Schema.Types.ObjectId, ref: "Moment", default: null },
+    threadId: { type: Schema.Types.ObjectId, ref: "Thread", default: null },
     reaction: { type: String, enum: [...REACTION_KINDS, null], default: null },
     read: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now },

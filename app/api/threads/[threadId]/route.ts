@@ -6,6 +6,7 @@ import { Thread, threadKey, type IThread } from "@/lib/db/models/Thread";
 import { contextFor } from "@/lib/companion/engine";
 import { companionError } from "@/lib/companion/http";
 import { NEEDS_PROFILE, handleOf } from "@/lib/social/handles";
+import { forgetThreads } from "@/lib/social/sharing";
 import { isDuplicateKey } from "@/lib/companion/messages";
 import { valueText } from "@/lib/companion/fields";
 import { ThreadPatchSchema } from "@/lib/companion/schemas";
@@ -108,6 +109,8 @@ export async function DELETE(_request: Request, ctx: { params: Promise<{ threadI
     const c = await contextFor(session.user.id);
     const res = await Thread.deleteOne({ _id: threadId, userId: c.userId });
     if (!res.deletedCount) return jsonError("Not found", 404);
+    // A shared one's updates go with it, and what anyone was told about it.
+    await forgetThreads([new mongoose.Types.ObjectId(threadId)]);
     return NextResponse.json({ ok: true });
   } catch (err) {
     return companionError(err);

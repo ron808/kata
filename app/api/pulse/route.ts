@@ -13,8 +13,13 @@ const When = z.string().datetime().optional();
 /** A notification in a few words, for the toast: who did what. */
 function line(n: NotificationT): string {
   const who = n.actor.name.split(/\s+/)[0] || n.actor.name;
+  const thread = n.threadTitle ?? "a thread";
   if (n.kind === "follow") return `${who} followed you`;
   if (n.kind === "reply") return `${who} replied to your moment`;
+  if (n.kind === "shared") return `${who} shared ${thread} with you`;
+  if (n.kind === "update") return `${who} added an update to ${thread}`;
+  if (n.kind === "comment") return `${who} commented on ${thread}`;
+  if (n.kind === "cheer") return `${who} cheered you on in ${thread}`;
   return `${who} reacted to your moment`;
 }
 
@@ -38,10 +43,11 @@ export async function GET(request: Request) {
       markSeen(me),
     ]);
     const newestAt = newest ? new Date(newest.createdAt).toISOString() : null;
-    let latest: { text: string } | null = null;
+    let latest: { text: string; href: string | null } | null = null;
     if (newest && newestAt && after.success && after.data && newestAt > after.data) {
       const [n] = await notificationsFor([newest]);
-      if (n) latest = { text: line(n) };
+      // A shared thread's page takes its own news in instead of toasting it.
+      if (n) latest = { text: line(n), href: n.threadId ? `/threads/${n.threadId}` : null };
     }
     // checkedAt is the baseline when nothing is unread, so the next notification still toasts.
     return NextResponse.json({ notifications, messages, newestAt, checkedAt: new Date().toISOString(), latest });

@@ -10,6 +10,8 @@ export interface NotificationKey {
   actorId: Id;
   kind: NotificationKind;
   momentId: Id | null;
+  /** A shared thread's: one notification per actor, kind and thread. */
+  threadId?: Id | null;
 }
 
 /**

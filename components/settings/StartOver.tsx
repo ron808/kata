@@ -237,7 +237,10 @@ function Sheet({
               );
             })}
           </ul>
-          <p className="mt-3 text-sm text-ink/70">Breakdowns go with your pages and threads, since they’re worked out from them.</p>
+          <p className="mt-3 text-sm text-ink/70">
+            Breakdowns go with your pages and threads, since they’re worked out from them. A thread you shared goes for the friends on it too, with everything
+            added to it.
+          </p>
         </>
       );
       actions = (
@@ -328,9 +331,10 @@ function Sheet({
             ) : (
               <>
                 <li>Your pages and letters</li>
-                <li>Threads, lists and breakdowns</li>
+                <li>Threads, lists and breakdowns, and threads you shared, for the friends on them too</li>
                 <li>{companion}’s conversation and memories</li>
                 <li>Your profile, handle and page layouts, and your posts and replies</li>
+                <li>What you added to threads friends shared with you</li>
                 <li>Who you follow and who follows you</li>
                 <li>Your conversations, for both of you</li>
               </>
