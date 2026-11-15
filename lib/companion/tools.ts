@@ -17,6 +17,7 @@ import { changeMission, clockText, createMission, endMission, focusOff, focusOn,
 import { Finished, NoSuchTask, type Change } from "@/lib/missions/apply";
 import { missionName, nextUp, tally } from "@/lib/missions/core";
 import { endsFrom, parseTasks } from "@/lib/missions/parse";
+import { clockSaid, planDay, planDayFor, planLine, planRow } from "@/lib/missions/plan";
 import { whereWeAre } from "@/lib/missions/prompts";
 import { reportOf } from "@/lib/missions/report";
 import type { Asked } from "@/lib/missions/said";
@@ -29,14 +30,15 @@ import { NEEDS_PROFILE, handleOf, normalizeHandle } from "@/lib/social/handles";
 import type { EntryField, FieldType, FieldValue, ReplyT } from "@/lib/types";
 import type { EngineCtx } from "./engine";
 import { FIELDS_MAX, TRACKED_KINDS, fieldKey, guessFields, habitName, habitRun, parseTrack, specText, valueText, valuesIn, withHowOften } from "./fields";
+import { TooManyAsks, askLater, askReceipt, askWhen, whenSaid } from "./asks";
 import { applyInputs, complete, ideas, input, logChoice } from "./forms";
 import { COMPANION_COLOURS, COMPANION_NAME_MAX, NAME_IDEAS, NICKNAME_MAX, tidyName } from "./name";
 import { nameReceipts } from "./naming";
 import type { ScreenItem } from "./screen";
-import { createThread, habitDone, logItem, nextHue, saveThread, touch, withFields, withLog, withValue } from "./threads";
+import { createThread, habitDone, listThreads, logItem, nextHue, saveThread, touch, withFields, withLog, withValue } from "./threads";
 import { guessKind } from "./extract";
 import { capFirst, count } from "./text";
-import { addDays, dateToDay, dayDiff, dayToDate, localDay, parseDueAt } from "./time";
+import { addDays, dateToDay, dayDiff, dayToDate, localDay, parseDueAt, weekdayOf } from "./time";
 
 /**
  * Everything Maru can do in the app, as tools for the model. Each one checks what it's given,
@@ -55,7 +57,9 @@ export type ClientAction =
   /** Maru wrote on today's page: an open page adds the same text to that field. */
   | { type: "page-write"; fieldId: string; text: string }
   /** A reply went up: the post on screen shows it at once. */
-  | { type: "replied"; momentId: string; reply: ReplyT; count: number | null };
+  | { type: "replied"; momentId: string; reply: ReplyT; count: number | null }
+  /** Something to ask about was kept or settled: when the app should next look (lib/companion/asks.ts). */
+  | { type: "asks"; next: string | null };
 
 export interface Turn {
   ctx: EngineCtx;
@@ -180,6 +184,7 @@ const CHOOSABLE = [
   "set_focus",
   "end_mission",
   "run_mission_again",
+  "ask_later",
 ];
 
 /** What a choice may run, as the model sees it: drafting replies only when there are posts on screen. */
@@ -412,16 +417,23 @@ const TOOLS: Record<string, ChatCompletionTool> = {
     ["how"]
   ),
   run_mission_again: fn("run_mission_again", "Start a past mission again from its tasks.", { mission: { type: "string", description: "Its name. Left out: the last one." } }),
+  ask_later: fn("ask_later", "Keeps something to ask them about later: it comes up as your message when they're next in Kata after that time. Kata sends nothing to their phone, so never say remind.", {
+    what: { type: "string", description: 'In their words: "call Mum".' },
+    when: { type: "string", description: 'In their words: "tonight", "at 6pm", "tomorrow", "in 2 hours", "on Friday".' },
+  }),
+  plan_day: fn("plan_day", "Plans a day from their threads (what's due, past its date, habits, next steps) with times, as a list they start with one tap. Never write a plan yourself.", {
+    day: { type: "string", enum: ["today", "tomorrow"], description: "Left out: the rest of today, or tomorrow from the evening on." },
+  }),
 };
 
 // Every tool's definition costs tokens on every call, and the free tier counts tokens per
 // minute, so a message gets the core tools plus the groups its words point to.
 const CORE = ["update_thread", "create_thread", "remember", "forget", "search_pages", "offer_choices", "open_page"];
-const MISSIONS = ["start_mission", "mission_task", "set_focus", "end_mission", "run_mission_again"];
+const MISSIONS = ["start_mission", "mission_task", "set_focus", "end_mission", "run_mission_again", "plan_day"];
 // In focus Maru works on the mission, so it carries little: the rest of its tools come only when their words ask.
 const FOCUS_CORE = [...MISSIONS, "update_thread", "create_thread", "offer_choices", "open_page"];
 const GROUPS: [RegExp, string[]][] = [
-  [/\b(?:to-?\s?dos?|check\s?lists?|missions?|focus|timers?|tasks?|lists? for|my list|the list|plan (?:for )?(?:my|the|today|tomorrow)|deep work|pomodoro|wrap(?:ping)? (?:it )?up|get through|to get done)\b/i, MISSIONS],
+  [/\b(?:to-?\s?dos?|check\s?lists?|missions?|focus|timers?|tasks?|lists? for|my list|the list|plan(?:s|ning)?|schedule|spend (?:my|the) (?:day|morning|afternoon|evening)|deep work|pomodoro|wrap(?:ping)? (?:it )?up|get through|to get done)\b/i, MISSIONS],
   // Several things for today in one breath is a list, whatever it's called.
   [/\b(?:today|tonight|this (?:morning|afternoon|evening))\b[^.?!]*(?:,|\band\b)[^.?!]*(?:,|\band\b)/i, MISSIONS],
   [
@@ -437,6 +449,7 @@ const GROUPS: [RegExp, string[]][] = [
     ["share_moment", "draft_message", "follow", "unfollow", "clear_notifications"],
   ],
   [/\b(?:archive|stop tracking|drop|remove|delete|get rid|not tracking|forget about)\b/i, ["archive_thread"]],
+  [/\b(?:remind(?:er)?s?|ask me|bring (?:it |this |that )?up|check in with me|nudge me|don['’]t let me forget)\b/i, ["ask_later"]],
   // A number with a unit, or a word for doing something again ("walked 30 min", "log my run").
   [
     /\d\s*(?:min|mins|minutes?|h|hrs?|hours?|km|kms|k|mi|miles?|m|steps?|pages?|reps?|sets?|laps?|glasses|cups?|kg|lbs?|words?|times?)\b|\b(?:log|logged|track(?:ing)?|walked|ran|read|slept|drank|swam|cycled|meditated|practi[cs]ed|studied|lifted)\b/i,
@@ -1372,6 +1385,66 @@ async function startMissionTool(turn: Turn, args: Args): Promise<string> {
   return `${same ? "Added to" : "Made"} "${name}", ${detail || "with nothing on it yet"}.`;
 }
 
+/**
+ * A day's plan from their threads (lib/missions/plan.ts), offered as one button that starts it as
+ * the day's list, or adds what isn't on it yet. The page draws the plan from the button's own
+ * rows; tapping runs start_mission with no model. Nothing to plan offers the list's form instead.
+ */
+export async function planTurn(turn: Turn, said: string): Promise<string> {
+  const { ctx } = turn;
+  const day = planDayFor(said, ctx.day, ctx.hour);
+  const [threads, open] = await Promise.all([listThreads(ctx), openMissions(ctx)]);
+  const list = open.find((m) => !m.title && m.day === day) ?? null;
+  const plan = planDay(threads, { day, today: ctx.day, now: ctx.now, tz: ctx.tz, taken: (title) => Boolean(list && alreadyOn(list, title)) });
+  const when = day === ctx.day ? "the rest of today" : day === addDays(ctx.day, 1) ? "tomorrow" : weekdayOf(day);
+  if (!plan.length) {
+    if (list) {
+      receipt(turn, "mission", missionName(list, ctx.day), plural(list.tasks.length, "task"), missionHref(list));
+      return `Everything due ${day === ctx.day ? "today" : when} is on ${missionName(list, ctx.day)} already.`;
+    }
+    await askWithForm(turn, "start_mission", day !== ctx.day ? { day } : {});
+    return `Nothing’s due ${day === ctx.day ? "today" : when} and no habits are left, so there’s nothing to plan from your threads.`;
+  }
+  const first = plan.find((p) => p.at)?.at ?? null;
+  const name = list ? missionName(list, ctx.day) : day === ctx.day ? "today’s list" : `${when === "tomorrow" ? "tomorrow’s" : `${when}’s`} list`;
+  turn.choices.push({
+    label: list ? `Add to ${name}` : `Start ${name}`,
+    detail: `${plan.length} ${plan.length === 1 ? "thing" : "things"}${first ? ` from ${clockSaid(first, ctx.tz)}` : ""}`,
+    kind: "mission",
+    tool: "start_mission",
+    args: { tasks: plan.map((p) => planLine(p, ctx.tz)), ...(day !== ctx.day ? { day } : {}), plan: plan.map((p) => planRow(p, ctx.tz)) },
+    editable: false,
+    public: false,
+    inputs: [],
+    action: "",
+    max: 0,
+  });
+  return `Here’s a plan for ${when}${first ? `, from ${clockSaid(first, ctx.tz)}` : ""}.`;
+}
+
+/**
+ * Something to ask them about later (lib/companion/asks.ts): kept, and said as when it'll come up
+ * while they're in Kata, never as anything sent. Missing what or when, it offers the form.
+ */
+export async function askTurn(turn: Turn, what: string, at: Date | null): Promise<string> {
+  const { ctx } = turn;
+  if (!what || !at) {
+    await askWithForm(turn, "ask_later", { what, when: at ? whenSaid(at, ctx) : "" });
+    return "Asked them what and when.";
+  }
+  try {
+    const { ask, next } = await askLater(ctx, what, at);
+    turn.done.push(askReceipt(ask, ctx));
+    turn.actions.push({ type: "asks", next: next?.toISOString() ?? null });
+    return `Kept: you'll ask about "${ask.text}" when they're next in Kata after then.`;
+  } catch (err) {
+    if (err instanceof TooManyAsks) throw new Unable(err.message, "Settings lists them, to drop some.");
+    throw err;
+  }
+}
+
+const askLaterTool = (turn: Turn, args: Args) => askTurn(turn, str(args.what) ?? "", str(args.when) ? askWhen(str(args.when)!, turn.ctx).at : null);
+
 /** Runs a change on a mission, saying plainly when it can't. */
 async function changed(turn: Turn, id: string, change: Change): Promise<IMission> {
   try {
@@ -1816,6 +1889,8 @@ const KIND_OF: Record<string, ReceiptKind> = {
   set_focus: "mission",
   end_mission: "mission",
   run_mission_again: "mission",
+  plan_day: "mission",
+  ask_later: "ask",
   keep_tasks: "mission",
   carry_mission: "mission",
 };
@@ -1980,6 +2055,18 @@ const QUESTION_KINDS = [
  */
 async function formFor(turn: Turn, tool: string, args: Args): Promise<Form | null> {
   switch (tool) {
+    case "ask_later": {
+      if (str(args.what) && str(args.when) && askWhen(str(args.when)!, turn.ctx).at) return null;
+      return {
+        inputs: [
+          input("what", "What to ask about", "text", { value: str(args.what) ?? "", required: true, placeholder: "Call Mum, the dentist" }),
+          input("when", "When", "text", { value: str(args.when) ?? "", required: true, options: ideas(["In an hour", "This evening", "Tomorrow morning"]), placeholder: "At 6pm, on Friday" }),
+        ],
+        label: "Ask me later",
+        action: "Keep it",
+        ask: "What should I ask about, and when?",
+      };
+    }
     case "create_thread": {
       const kind = THREAD_KINDS.find((k) => k === args.kind && k !== "other");
       const title = titleOf(args.title);
@@ -2314,6 +2401,8 @@ const RUN: Record<string, Tool> = {
   set_focus: setFocusTool,
   end_mission: endMissionTool,
   run_mission_again: runAgainTool,
+  plan_day: (turn, args) => planTurn(turn, str(args.day) ?? ""),
+  ask_later: askLaterTool,
 };
 
 /** What only a tap can run. */

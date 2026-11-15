@@ -38,6 +38,8 @@ export interface IUser {
   companionHue: number | null;
   /** The mission they're focused on, which turns the whole app over to it. */
   focusMissionId: mongoose.Types.ObjectId | null;
+  /** When the earliest thing they asked to be asked about can come up (lib/companion/asks.ts). */
+  nextAskAt: Date | null;
   /** The colours focus wears. */
   focusTheme: FocusTheme;
   /** When they last had Kata open, kept by the shell's pulse at most once a minute. */
@@ -110,6 +112,7 @@ const UserSchema = new Schema<IUser>(
     nickname: { type: String, default: "", trim: true, maxlength: 30 },
     companionHue: { type: Number, default: null, min: 1, max: 7 },
     focusMissionId: { type: Schema.Types.ObjectId, ref: "Mission", default: null },
+    nextAskAt: { type: Date, default: null },
     focusTheme: { type: String, enum: FOCUS_THEMES, default: "sea" },
     lastSeenAt: { type: Date, default: null },
     showActive: { type: Boolean, default: true },

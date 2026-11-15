@@ -38,6 +38,7 @@ import { habitRun } from "./fields";
 import { input, logChoice } from "./forms";
 import { companionNameOf, nicknameOf } from "./name";
 import { candidatesFromItems, splitList, statusIn, threadsFromText, threadsMentioned } from "./extract";
+import { answerAsk } from "./asks";
 import { insertDrafts, isDuplicateKey, messagesForDay, MOOD_REPLIES, stableId, type Draft } from "./messages";
 import { isShortPhrase, joinList, noteText, ref, seedOf, stepText, trimEnd } from "./text";
 import {
@@ -431,6 +432,8 @@ export interface Exchange {
   ctx: EngineCtx;
   /** Everything this call wrote, oldest first. */
   created: ICompanionMessage[];
+  /** When the app should next look for something to ask about, if that changed. */
+  actions?: { type: "asks"; next: string | null }[];
 }
 
 /** The writer tapped a quick reply. Each Kata message can be answered once. */
@@ -450,6 +453,12 @@ export async function answer(userId: string, messageId: string, value: string): 
     if (settled) throw new CompanionError(settled, 409);
   }
   await claim(ctx, msg, value);
+  // Something they asked to be asked about: settled, or kept for later (lib/companion/asks.ts).
+  if (value.startsWith("ask:")) {
+    const settled = await answerAsk(ctx, value, chosen.label);
+    const created = await insertDrafts(ctx.userId, ctx.day, [{ from: "you", kind: "reply", text: settled.you }, settled.kata]);
+    return { ctx, created: [...today.created, ...created], actions: [{ type: "asks", next: settled.next?.toISOString() ?? null }] };
+  }
   return { ctx, created: [...today.created, ...(await respond(ctx, msg, chosen, chosen.label))] };
 }
 

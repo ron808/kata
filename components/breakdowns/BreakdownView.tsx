@@ -4,12 +4,14 @@ import { KIND_LABEL } from "@/components/shared/Status";
 import { periodTitle, rangeText } from "@/lib/breakdowns/period";
 import { percent, plural, verdictOf } from "@/lib/breakdowns/summary";
 import { dayDiff } from "@/lib/companion/time";
+import { lasted } from "@/lib/missions/core";
 import type { BreakdownT, BreakdownThread } from "@/lib/types";
 import { BreakdownActions } from "./BreakdownActions";
 import { DRAWN_DAYS, DayBars, DayStrip, Meter } from "./Charts";
 import { Take } from "./Take";
 
 const MOODS = ["foggy", "low", "okay", "good", "bright"];
+const ENERGIES = ["empty", "low", "steady", "good", "full"];
 const BEFORE: Record<BreakdownT["unit"], string> = { day: "the day before", week: "the week before", month: "the month before", year: "the year before", days: "" };
 
 const number = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 1 });
@@ -82,6 +84,11 @@ export function BreakdownView({ b, today, tz, name, heading: Heading = "h2" }: {
   ];
   const anyThreads = groups.some((g) => g.items.length) || s.started.length > 0;
   const moodAverage = s.moods.length ? s.moods.reduce((n, m) => n + m.mood, 0) / s.moods.length : null;
+  // Breakdowns made before these were counted have none of them.
+  const energies = s.energies ?? [];
+  const answers = s.answers ?? [];
+  const lists = s.lists ?? { made: 0, tasks: 0, done: 0, focusMs: 0 };
+  const energyAverage = energies.length ? energies.reduce((n, e) => n + e.energy, 0) / energies.length : null;
 
   return (
     <article aria-labelledby={id} className="grid grid-cols-1 gap-6">
@@ -203,6 +210,29 @@ export function BreakdownView({ b, today, tz, name, heading: Heading = "h2" }: {
                 </div>
               </div>
             ) : null}
+            {energyAverage !== null ? (
+              <div>
+                <p className="font-semibold">Energy: mostly {ENERGIES[Math.round(energyAverage) - 1] ?? "steady"}</p>
+                <p className="text-[0.875rem] text-ink/70">{plural(energies.length, "day")} with your energy · the taller, the fuller</p>
+                <div className="mt-2.5 max-w-[24rem]">
+                  <DayBars
+                    from={b.counted}
+                    upTo={b.upTo}
+                    values={energies.map((e) => ({ day: e.day, value: e.energy }))}
+                    max={5}
+                    label={`Energy: ${energies.map((e) => ENERGIES[e.energy - 1]).join(", ")}`}
+                  />
+                </div>
+              </div>
+            ) : null}
+            {lists.made ? (
+              <div>
+                <p className="font-semibold">
+                  {lists.done} of {plural(lists.tasks, "task")} done on {plural(lists.made, "list")}
+                </p>
+                {lists.focusMs >= 60_000 ? <p className="text-[0.875rem] text-ink/70">{lasted(lists.focusMs)} in focus</p> : null}
+              </div>
+            ) : null}
             {s.people.moments || s.people.replies ? (
               <p className="font-semibold">
                 Shared {plural(s.people.moments, "moment")}, wrote {plural(s.people.replies, "reply", "replies")}
@@ -241,12 +271,28 @@ export function BreakdownView({ b, today, tz, name, heading: Heading = "h2" }: {
           </section>
         ) : null}
 
-        {s.numbers.length ? (
+        {s.numbers.length || answers.length ? (
           <section aria-labelledby={`${id}-numbers`} className="card p-5 sm:p-6">
             <h2 id={`${id}-numbers`} className="font-display text-display-s">
               Numbers
             </h2>
             <ul className="mt-4 grid grid-cols-1 gap-5">
+              {answers.map((a) => (
+                <li key={`page-${a.label}`}>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="min-w-0 truncate font-semibold">
+                      {a.label} <span className="font-normal text-ink/65">· your page</span>
+                    </span>
+                    <span className="shrink-0 font-display text-[1.375rem] tabular-nums">{number(a.average)}</span>
+                  </div>
+                  <p className="text-[0.875rem] text-ink/70">
+                    on average over {plural(a.days, "day")} · {number(a.total)} in all
+                  </p>
+                  <div className="mt-2 max-w-[24rem]">
+                    <DayBars from={b.counted} upTo={b.upTo} values={a.values} max={Math.max(...a.values.map((v) => v.value))} label={`${a.label}: ${a.values.map((v) => number(v.value)).join(", ")}`} />
+                  </div>
+                </li>
+              ))}
               {s.numbers.map((n) => {
                 const unit = n.unit ? ` ${n.unit}` : "";
                 return (
@@ -281,6 +327,15 @@ export function BreakdownView({ b, today, tz, name, heading: Heading = "h2" }: {
           </section>
         ) : null}
       </div>
+
+      {s.moods.length || energies.length ? (
+        <p className="text-[0.9375rem]">
+          <Link href="/breakdowns#patterns" className="link font-semibold">
+            Patterns
+          </Link>{" "}
+          <span className="text-ink/75">show what went with your better and worse days over the last two months.</span>
+        </p>
+      ) : null}
 
       <p className="max-w-[62ch] text-[0.875rem] text-ink/70">
         Worked out from what you logged in Kata, not judged by {name}: the days you showed up, the open threads you finished or moved, and the days you kept your habits. A part with nothing to go on is left out of the score.

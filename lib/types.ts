@@ -193,7 +193,7 @@ export interface QuickReply {
   value: string;
 }
 
-export type ReceiptKind = "thread" | "memory" | "page" | "question" | "settings" | "names" | "people" | "share" | "message" | "breakdown" | "mission" | "open";
+export type ReceiptKind = "thread" | "memory" | "page" | "question" | "settings" | "names" | "people" | "share" | "message" | "breakdown" | "mission" | "open" | "ask";
 
 /** Something Maru did. */
 export interface Receipt {
@@ -231,6 +231,18 @@ export interface Choice {
   max: number;
   /** A thread offered as itself: its id, drawn as its card with its steps (see answerStep). */
   thread: string | null;
+  /** A day's plan offered as a list: its rows, drawn above its button (see planTurn). */
+  plan?: PlanRow[];
+}
+
+/** One task on a day's plan as the page draws it: a suggested time, how long, and why it's there. */
+export interface PlanRow {
+  /** "2:30 pm", or empty when there was no time left for it. */
+  time: string;
+  title: string;
+  minutes: number;
+  because: string;
+  hue: number;
 }
 
 export interface KataMessage {
@@ -396,6 +408,12 @@ export interface BreakdownStats {
   /** 1 (foggy) to 5 (bright), the day's last answer. */
   moods: { day: string; mood: number }[];
   people: { moments: number; replies: number };
+  /** 1 (empty) to 5 (full), from the page's own energy answer. */
+  energies: { day: string; energy: number }[];
+  /** Numbers the page asks for (hours slept, minutes trained), one per question, by its wording. */
+  answers: { label: string; days: number; average: number; total: number; values: { day: string; value: number }[] }[];
+  /** Lists for days in the stretch: how many, their tasks, how many were done, and the time in focus. */
+  lists: { made: number; tasks: number; done: number; focusMs: number };
   /** Threads other than habits that were open during the stretch. */
   open: number;
 }

@@ -21,6 +21,8 @@ import { PublishToggle } from "@/components/settings/PublishToggle";
 import { SignOutButton } from "@/components/settings/SignOutButton";
 import { StartOver } from "@/components/settings/StartOver";
 import { ActiveSwitch } from "@/components/settings/ActiveSwitch";
+import { WaitingAsks } from "@/components/settings/WaitingAsks";
+import { waitingAsks } from "@/lib/companion/asks";
 import { accountCounts } from "@/lib/account";
 import { AppPage, EmptyNote, PageHeader } from "@/components/shared/AppPage";
 import { buttonClass } from "@/components/shared/Button";
@@ -32,16 +34,17 @@ export const metadata: Metadata = { title: "Settings · Kata" };
 
 async function load(userId: string) {
   await connectDB();
-  const [me, user, { name }, counts] = await Promise.all([
+  const [me, user, { name }, counts, asks] = await Promise.all([
     loadMe(userId),
     User.findById(userId).select("email checkIn timezone activeTemplateId role showActive").lean(),
     namesFor(userId),
     accountCounts(userId),
+    waitingAsks(userId),
   ]);
   const template = user?.activeTemplateId
     ? await Template.findOne({ _id: user.activeTemplateId, userId }).select("name description fields isPublished credit publishedSlug").lean()
     : null;
-  return { me, user, template, name, counts };
+  return { me, user, template, name, counts, asks };
 }
 
 export default async function SettingsPage() {
@@ -54,7 +57,7 @@ export default async function SettingsPage() {
   } catch (err) {
     return <DbNotConfigured error={err instanceof Error ? err.message : null} />;
   }
-  const { me, user, template, name, counts } = data;
+  const { me, user, template, name, counts, asks } = data;
   if (!me || !user) redirect("/login");
 
   const fields = template ? [...template.fields].sort((a, b) => a.order - b.order) : [];
@@ -84,6 +87,10 @@ export default async function SettingsPage() {
               ai={isGroqConfigured()}
             />
           </section>
+
+          <Card id="asks" title="Waiting to ask" note={`What you asked ${name} to bring up later. It comes up when you’re in Kata after its time; nothing is sent to your phone.`}>
+            <WaitingAsks initial={asks} name={name} tz={user.timezone || "UTC"} />
+          </Card>
         </div>
 
         <div className="grid min-w-0 grid-cols-1 gap-6 xl:col-span-5">

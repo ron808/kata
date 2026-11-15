@@ -1,11 +1,13 @@
 import { Types } from "mongoose";
 import { CompanionMessage } from "@/lib/db/models/CompanionMessage";
 import { Entry } from "@/lib/db/models/Entry";
+import { Mission, type IMission } from "@/lib/db/models/Mission";
 import { Moment } from "@/lib/db/models/Moment";
 import { Reply } from "@/lib/db/models/Reply";
 import { Thread, type IThread, type ThreadStatus } from "@/lib/db/models/Thread";
 import { addDays, dateToDay, dayDiff, dayToDate, localDay } from "@/lib/companion/time";
-import { dayMoods } from "@/lib/patterns/compute";
+import { focusedFor } from "@/lib/missions/core";
+import { dayMoods, pageScale } from "@/lib/patterns/compute";
 import type { BreakdownParts, BreakdownStats, BreakdownThread } from "@/lib/types";
 
 /*
@@ -19,7 +21,23 @@ const ref = (t: IThread): BreakdownThread => ({ id: String(t._id), title: t.titl
 const round = (n: number) => Math.round(n * 100) / 100;
 
 export function emptyStats(): BreakdownStats {
-  return { days: 0, active: [], done: [], moved: [], started: [], stuck: [], habits: [], numbers: [], pages: { days: [], words: 0 }, moods: [], people: { moments: 0, replies: 0 }, open: 0 };
+  return {
+    days: 0,
+    active: [],
+    done: [],
+    moved: [],
+    started: [],
+    stuck: [],
+    habits: [],
+    numbers: [],
+    pages: { days: [], words: 0 },
+    moods: [],
+    people: { moments: 0, replies: 0 },
+    open: 0,
+    energies: [],
+    answers: [],
+    lists: { made: 0, tasks: 0, done: 0, focusMs: 0 },
+  };
 }
 
 /** The days a habit was done: the ones recorded, the run its streak ends on, and days it logged a number. */
@@ -55,12 +73,13 @@ export async function gather(userId: string, tz: string, from: string, upTo: str
   // Instants around the stretch, wide enough for any time zone; each is then checked by its local day.
   const since = dayToDate(addDays(from, -1));
   const until = dayToDate(addDays(upTo, 2));
-  const [threads, entries, moods, talked, moments, replies] = await Promise.all([
+  const [threads, entries, moods, talked, moments, replies, lists] = await Promise.all([
     Thread.find({ userId: id, archived: false }).lean<IThread[]>(),
-    // Only a page's own mood, of all it holds.
-    Entry.find({ userId: id, date: { $gte: dayToDate(from), $lte: dayToDate(upTo) } })
-      .select({ date: 1, wordCount: 1, fields: { $elemMatch: { type: "mood_slider" } } })
-      .lean<{ date: Date; wordCount?: number; fields?: { type: string; value?: unknown }[] }[]>(),
+    // Of all a page holds, only its mood, energy and numbers: a year of long answers stays behind.
+    Entry.aggregate<{ date: Date; wordCount?: number; fields: { type: string; label: string; value?: unknown }[] }>([
+      { $match: { userId: id, date: { $gte: dayToDate(from), $lte: dayToDate(upTo) } } },
+      { $project: { date: 1, wordCount: 1, fields: { $filter: { input: "$fields", cond: { $in: ["$$this.type", ["mood_slider", "energy", "number"]] } } } } },
+    ]),
     CompanionMessage.find({ userId: id, from: "you", mood: { $ne: null }, day: { $gte: from, $lte: upTo } })
       .sort({ createdAt: 1 })
       .select("day mood")
@@ -68,6 +87,9 @@ export async function gather(userId: string, tz: string, from: string, upTo: str
     CompanionMessage.distinct("day", { userId: id, from: "you", day: { $gte: from, $lte: upTo } }).exec() as Promise<string[]>,
     Moment.find({ userId: id, createdAt: { $gte: since, $lt: until } }).select("createdAt").lean<{ createdAt: Date }[]>(),
     Reply.find({ userId: id, createdAt: { $gte: since, $lt: until } }).select("createdAt").lean<{ createdAt: Date }[]>(),
+    Mission.find({ userId: id, day: { $gte: from, $lte: upTo } })
+      .select("day tasks.status tasks.doneAt focusMs focusedAt")
+      .lean<Pick<IMission, "day" | "tasks" | "focusMs" | "focusedAt">[]>(),
   ]);
 
   const active = new Set<string>(talked);
@@ -78,10 +100,25 @@ export async function gather(userId: string, tz: string, from: string, upTo: str
     words += e.wordCount ?? 0;
   }
   pageDays.forEach((d) => active.add(d));
-  const moodByDay = dayMoods(
-    moods,
-    entries.map((e) => ({ day: dateToDay(e.date), fields: e.fields }))
-  );
+  const written = entries.map((e) => ({ day: dateToDay(e.date), fields: e.fields ?? [] }));
+  const moodByDay = dayMoods(moods, written);
+  const energies = written.flatMap((p) => {
+    const energy = pageScale(p.fields, "energy");
+    return energy === null ? [] : [{ day: p.day, energy }];
+  });
+  // A page's own numbers, by the question's wording: the same question on another layout is the same number.
+  const answers = new Map<string, { label: string; values: { day: string; value: number }[] }>();
+  for (const p of written) {
+    for (const f of p.fields) {
+      const label = (f.label ?? "").trim();
+      if (f.type !== "number" || typeof f.value !== "number" || !Number.isFinite(f.value) || !label) continue;
+      const a = answers.get(label.toLowerCase()) ?? { label, values: [] };
+      a.values.push({ day: p.day, value: f.value });
+      answers.set(label.toLowerCase(), a);
+    }
+  }
+  // A task done on a list is something logged that day.
+  for (const m of lists) for (const t of m.tasks) if (t.status === "done" && t.doneAt && inside(dayOf(t.doneAt))) active.add(dayOf(t.doneAt));
   const posted = [...moments, ...replies].map((p) => dayOf(p.createdAt)).filter(inside);
   posted.forEach((d) => active.add(d));
 
@@ -146,6 +183,19 @@ export async function gather(userId: string, tz: string, from: string, upTo: str
   stats.pages = { days: [...pageDays].sort(), words };
   stats.moods = [...moodByDay].map(([day, mood]) => ({ day, mood })).sort((a, b) => a.day.localeCompare(b.day));
   stats.people = { moments: moments.filter((m) => inside(dayOf(m.createdAt))).length, replies: replies.filter((r) => inside(dayOf(r.createdAt))).length };
+  stats.energies = energies.sort((a, b) => a.day.localeCompare(b.day));
+  stats.answers = [...answers.values()].map((a) => {
+    const values = a.values.sort((x, y) => x.day.localeCompare(y.day));
+    const total = round(values.reduce((n, v) => n + v.value, 0));
+    return { label: a.label, days: values.length, average: round(total / values.length), total, values };
+  });
+  const now = Date.now();
+  stats.lists = {
+    made: lists.length,
+    tasks: lists.reduce((n, m) => n + m.tasks.length, 0),
+    done: lists.reduce((n, m) => n + m.tasks.filter((t) => t.status === "done").length, 0),
+    focusMs: lists.reduce((n, m) => n + focusedFor({ focusMs: m.focusMs ?? 0, focusedAt: m.focusedAt ?? undefined }, now), 0),
+  };
   return stats;
 }
 

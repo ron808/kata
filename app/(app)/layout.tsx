@@ -13,16 +13,16 @@ import { AppShell, type ShellUser } from "@/components/shared/AppShell";
 
 /** The shell's data, or null when the account is gone (deleted on another device): that session has nothing left to show. */
 async function loadShell(id: string, fallback: { name: string; email: string }): Promise<{ user: ShellUser; unread: number; messages: number } | null> {
-  const base = { ...fallback, handle: null, timezone: null, hue: hueOf({ _id: new Types.ObjectId(id) }), names: { name: companionNameOf(null), nickname: nicknameOf(fallback), hue: null }, focus: null, focusTheme: "sea" as const };
+  const base = { ...fallback, handle: null, timezone: null, hue: hueOf({ _id: new Types.ObjectId(id) }), names: { name: companionNameOf(null), nickname: nicknameOf(fallback), hue: null }, focus: null, focusTheme: "sea" as const, nextAskAt: null };
   try {
     await connectDB();
     const [doc, unread, messages] = await Promise.all([
-      User.findById(id).select("name handle hue timezone companionName nickname companionHue focusMissionId focusTheme").lean(),
+      User.findById(id).select("name handle hue timezone companionName nickname companionHue focusMissionId focusTheme nextAskAt").lean(),
       unreadCount(id),
       unreadMessages(id),
     ]);
     if (!doc) return null;
-    const user = { ...base, name: doc.name || base.name, handle: doc.handle ?? null, timezone: doc.timezone ?? null, hue: hueOf(doc) };
+    const user = { ...base, name: doc.name || base.name, handle: doc.handle ?? null, timezone: doc.timezone ?? null, hue: hueOf(doc), nextAskAt: doc.nextAskAt ? new Date(doc.nextAskAt).toISOString() : null };
     const focusTheme = doc.focusTheme ?? "sea";
     const focus = doc.focusMissionId ? await focusState(id, doc.focusMissionId, focusTheme, localDay(validTimeZone(doc.timezone))) : null;
     return { user: { ...user, focus, focusTheme, names: { name: companionNameOf(doc), nickname: nicknameOf({ ...doc, name: user.name }), hue: companionHueOf(doc) } }, unread, messages };

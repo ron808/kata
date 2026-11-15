@@ -1,4 +1,5 @@
 import type { Model } from "mongoose";
+import { Ask } from "./models/Ask";
 import { Breakdown } from "./models/Breakdown";
 import { CompanionMessage } from "./models/CompanionMessage";
 import { Conversation } from "./models/Conversation";
@@ -25,6 +26,7 @@ export interface IndexReport {
 
 // Every model: one left out here never gets its indexes checked.
 const MODELS = [
+  Ask,
   Breakdown,
   CompanionMessage,
   Conversation,

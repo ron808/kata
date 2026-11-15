@@ -32,7 +32,7 @@ export default async function ThreadsPage() {
       <PageHeader
         kicker={`${name}’s map of you`}
         title="Threads"
-        lede={`Everything ${name} keeps track of for you: projects, goals, habits, people, dates. Only you see these, unless you show one on your profile.`}
+        lede={`Everything ${name} keeps track of for you: projects, goals, habits, people, dates. No one else on Kata sees these, unless you show one on your profile.`}
       />
       {data ? (
         <Suspense>

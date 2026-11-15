@@ -8,7 +8,7 @@ import {
   type IReceipt,
   type MessageKind,
 } from "@/lib/db/models/CompanionMessage";
-import type { KataMessage } from "@/lib/types";
+import type { KataMessage, PlanRow } from "@/lib/types";
 
 export const MOOD_REPLIES: IQuickReply[] = [
   { label: "Foggy", value: "1" },
@@ -82,6 +82,15 @@ export async function messagesForDay(userId: string, day: string): Promise<IComp
   return CompanionMessage.find({ userId, day }).sort({ createdAt: 1, _id: 1 }).lean<ICompanionMessage[]>();
 }
 
+/** A plan's rows as stored on its button, checked: anything malformed is left out. */
+function planRows(rows: unknown[]): PlanRow[] {
+  return rows.flatMap((r) => {
+    const o = (r ?? {}) as Record<string, unknown>;
+    if (typeof o.title !== "string" || !o.title) return [];
+    return [{ time: typeof o.time === "string" ? o.time : "", title: o.title, minutes: typeof o.minutes === "number" ? o.minutes : 0, because: typeof o.because === "string" ? o.because : "", hue: typeof o.hue === "number" ? o.hue % 8 : 0 }];
+  });
+}
+
 export function toKataMessage(m: ICompanionMessage): KataMessage {
   return {
     _id: String(m._id),
@@ -113,6 +122,7 @@ export function toKataMessage(m: ICompanionMessage): KataMessage {
       action: c.action ?? "",
       max: c.max ?? 0,
       thread: c.tool === "thread" && typeof c.args?.id === "string" ? c.args.id : null,
+      ...(c.tool === "start_mission" && Array.isArray(c.args?.plan) ? { plan: planRows(c.args.plan) } : {}),
     })),
     createdAt: new Date(m.createdAt).toISOString(),
   };

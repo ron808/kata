@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Icon } from "@/components/shared/Icon";
 import { MaruMark } from "@/components/shared/Avatar";
 import { focusChanged } from "@/components/focus/mode";
-import { ASK_EVENT, HELLO_EVENT, REPLIED_EVENT, useCompanion, type Focus, type Replied } from "@/components/shared/Companion";
+import { ASK_EVENT, ASKS_EVENT, HELLO_EVENT, REPLIED_EVENT, useCompanion, type Focus, type Replied } from "@/components/shared/Companion";
 import { postsInView } from "@/components/shared/screen";
 import { setTheme } from "@/components/shared/ThemeToggle";
 import { useToast } from "@/components/shared/Toast";
@@ -17,11 +17,12 @@ import type { ClientAction } from "@/lib/companion/tools";
 import type { KataMessage, ThreadStatus, ThreadT } from "@/lib/types";
 import { Choices, Receipts } from "./Work";
 
-// Short to fit one row in the panel; each says the whole request.
-const PROMPTS: [label: string, says: string][] = [
-  ["Suggest replies", "Suggest replies to this post"],
-  ["Your take", "What do you think of this post?"],
-  ["Remind me", "Remind me to reply to this later"],
+// Short to fit one row in the panel; each says the whole request, about the post it's on ("Mira's post").
+const PROMPTS: [label: string, says: (post: string) => string][] = [
+  ["Suggest replies", () => "Suggest replies to this post"],
+  ["Your take", () => "What do you think of this post?"],
+  // Kept as an ask, it comes up later on its own, so it names whose post.
+  ["Ask me later", (post) => `Ask me later about replying to ${post}`],
 ];
 
 const MOOD_LABELS = MOOD_STEPS.map((s) => s.label);
@@ -132,6 +133,8 @@ export function Conversation({
       else if (a.type === "page-write") window.dispatchEvent(new CustomEvent("maru:page-write", { detail: a }));
       // The post on screen shows the reply under it at once.
       else if (a.type === "replied") window.dispatchEvent(new CustomEvent<Replied>(REPLIED_EVENT, { detail: { momentId: a.momentId, reply: a.reply, count: a.count } }));
+      // Something to ask about was kept or settled: the shell's timer looks again then.
+      else if (a.type === "asks") window.dispatchEvent(new CustomEvent<string | null>(ASKS_EVENT, { detail: a.next }));
     }
     const go = actions.find((a) => a.type === "navigate");
     if (go?.type === "navigate") {
@@ -394,7 +397,7 @@ export function Conversation({
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
               {PROMPTS.map(([label, says]) => (
-                <button key={label} type="button" className="chip chip-sm" disabled={busy} onClick={() => say(says)}>
+                <button key={label} type="button" className="chip chip-sm" disabled={busy} onClick={() => say(says(focus.label))}>
                   {label}
                 </button>
               ))}

@@ -5,6 +5,7 @@ import { useId, useState, type FormEvent } from "react";
 import { Button } from "@/components/shared/Button";
 import { Icon, type IconName } from "@/components/shared/Icon";
 import { FIELDS_MAX, TRACKED_KINDS, guessFields, parseTrack, specLabel, specText } from "@/lib/companion/fields";
+import { lengthSaid } from "@/lib/missions/plan";
 import type { Choice, ChoiceInput, KataMessage, Receipt, ReceiptKind } from "@/lib/types";
 
 /*
@@ -15,7 +16,7 @@ import type { Choice, ChoiceInput, KataMessage, Receipt, ReceiptKind } from "@/l
  */
 
 // A thread or a person brings its own hue; everything else has one by kind.
-const HUE: Record<ReceiptKind, number> = { thread: 3, memory: 4, page: 1, question: 2, settings: 6, names: 5, people: 5, share: 0, message: 2, mission: 2, breakdown: 1, open: 7 };
+const HUE: Record<ReceiptKind, number> = { thread: 3, memory: 4, page: 1, question: 2, settings: 6, names: 5, people: 5, share: 0, message: 2, mission: 2, breakdown: 1, open: 7, ask: 2 };
 const ICON: Record<ReceiptKind, IconName> = {
   thread: "threads",
   memory: "star",
@@ -29,6 +30,7 @@ const ICON: Record<ReceiptKind, IconName> = {
   breakdown: "chart",
   mission: "target",
   open: "arrow",
+  ask: "clock",
 };
 
 // Something Maru can do, as a button: outlined and pressable, where a receipt is a soft patch.
@@ -111,6 +113,7 @@ export function Choices({
         // Settled: another choice was made, or the message was answered another way (a check-in's "Done").
         const props = { choice: c, chosen, open, working: running === i, settled: Boolean(message.answer) && !chosen, onChoose: (edit?: string, values?: Values) => onChoose(i, edit, values) };
         if (c.editable) return <Draft key={i} {...props} primary={drafts === 1} />;
+        if (c.plan?.length) return <PlanOffer key={i} {...props} />;
         // One line to write down (what's in the way, the next step): the question and its box, open.
         if (c.inputs.length === 1 && c.inputs[0].type === "text") return chosen ? null : <LineForm key={i} {...props} />;
         if (c.inputs.length) {
@@ -172,6 +175,35 @@ function Offer({ choice: c, chosen, open, working, settled, onChoose }: ChoicePr
       <OfferBody choice={c} chosen={chosen} />
       {working ? <Working /> : <Icon name={chosen ? "check" : c.public ? "globe" : "arrow"} className="h-[1.1rem] w-[1.1rem] shrink-0" strokeWidth={chosen ? 2.6 : 2} />}
     </button>
+  );
+}
+
+/**
+ * A day's plan: each task with its suggested time, its thread's colour, why it's there and how
+ * long, then the one button that starts it as the day's list. Worked out in code (planTurn).
+ */
+function PlanOffer(props: ChoiceProps) {
+  const rows = props.choice.plan ?? [];
+  return (
+    <div className={`grid grid-cols-1 gap-2 transition-opacity duration-300 ${props.settled ? "opacity-45" : ""}`}>
+      <ol aria-label="The plan" className="rounded-md bg-raised p-1">
+        {rows.map((r, i) => (
+          <li key={i} data-hue={r.hue} className="flex items-start gap-2.5 px-2.5 py-2">
+            <span className="w-[4.1rem] shrink-0 pt-px text-[0.875rem] font-semibold tabular-nums">{r.time || "Any time"}</span>
+            <span aria-hidden className="mt-[5px] h-3 w-3 shrink-0 rounded-full border-2 border-edge bg-hue" />
+            <span className="min-w-0 flex-1">
+              <span className="block font-semibold leading-tight [overflow-wrap:anywhere]">{r.title}</span>
+              <span className="mt-0.5 block text-[0.8125rem] leading-snug text-ink/70 [overflow-wrap:anywhere]">
+                {r.because}
+                {r.minutes ? ` · ${lengthSaid(r.minutes)}` : ""}
+              </span>
+            </span>
+          </li>
+        ))}
+      </ol>
+      <Offer {...props} />
+      {props.chosen ? null : <p className="px-1 text-[0.8125rem] leading-snug text-ink/65">The times are suggestions: Kata can’t see your calendar. Change anything on the list after.</p>}
+    </div>
   );
 }
 

@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { Types } from "mongoose";
+import { Ask } from "@/lib/db/models/Ask";
 import { Breakdown } from "@/lib/db/models/Breakdown";
 import { CompanionMessage } from "@/lib/db/models/CompanionMessage";
 import { Conversation } from "@/lib/db/models/Conversation";
@@ -123,13 +124,13 @@ export async function startFresh(userId: string, parts: readonly FreshPart[], se
     ...(has("pages") ? [Entry.deleteMany({ userId: uid }), Digest.deleteMany({ userId: uid })] : []),
     ...(has("threads") ? [Thread.deleteMany({ userId: uid }), Mission.deleteMany({ userId: uid })] : []),
     ...(has("pages") || has("threads") ? [Breakdown.deleteMany({ userId: uid })] : []),
-    ...(has("maru") ? [CompanionMessage.deleteMany({ userId: uid })] : []),
+    ...(has("maru") ? [CompanionMessage.deleteMany({ userId: uid }), Ask.deleteMany({ userId: uid })] : []),
   ]);
   if (has("posts")) await removePosts(uid);
   const set = {
     ...(has("pages") ? { streak: 0, longestStreak: 0, totalEntries: 0, totalWords: 0, lastEntryDate: null } : {}),
     ...(has("threads") ? { focusMissionId: null } : {}),
-    ...(has("maru") ? { memories: [] } : {}),
+    ...(has("maru") ? { memories: [], nextAskAt: null } : {}),
     ...(setupAgain ? { onboardedAt: null } : {}),
   };
   if (Object.keys(set).length) await User.updateOne({ _id: uid }, { $set: set });
@@ -148,6 +149,7 @@ export async function deleteAccount(userId: string): Promise<void> {
     Mission.deleteMany({ userId: uid }),
     Breakdown.deleteMany({ userId: uid }),
     CompanionMessage.deleteMany({ userId: uid }),
+    Ask.deleteMany({ userId: uid }),
     Template.deleteMany({ userId: uid }),
     Notification.deleteMany({ $or: [{ userId: uid }, { actorId: uid }] }),
     PasswordResetToken.deleteMany({ userId: uid }),

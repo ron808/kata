@@ -169,6 +169,7 @@ function takePrompt(name: string, first: string) {
 }
 
 const MOOD_WORDS = ["foggy", "low", "okay", "good", "bright"];
+const ENERGY_WORDS = ["empty", "low", "steady", "good", "full"];
 
 /** The breakdown as lines of facts for the model. */
 export function factsOf(b: BreakdownT, today: string): string {
@@ -194,6 +195,9 @@ export function factsOf(b: BreakdownT, today: string): string {
       : "",
     s.pages.days.length ? `Pages: written on ${s.pages.days.length} of ${s.days} days, ${plural(s.pages.words, "word")}.` : "Pages: none written.",
     s.moods.length ? `Moods: ${s.moods.map((m) => MOOD_WORDS[m.mood - 1] ?? "okay").join(", ")}.` : "",
+    s.energies?.length ? `Energy: ${s.energies.map((e) => ENERGY_WORDS[e.energy - 1] ?? "steady").join(", ")}.` : "",
+    s.answers?.length ? `From their page: ${s.answers.map((a) => `${a.label}, ${a.average} on average over ${plural(a.days, "day")}`).join("; ")}.` : "",
+    s.lists?.made ? `Lists: ${s.lists.done} of ${plural(s.lists.tasks, "task")} done on ${plural(s.lists.made, "list")}${s.lists.focusMs >= 60_000 ? `, ${Math.round(s.lists.focusMs / 60_000)} minutes in focus` : ""}.` : "",
     s.people.moments || s.people.replies ? `People: shared ${plural(s.people.moments, "moment")}, wrote ${plural(s.people.replies, "reply", "replies")}.` : "",
   ]
     .filter(Boolean)

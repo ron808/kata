@@ -35,6 +35,9 @@ export function askAbout(focus: Focus) {
 /** Maru said hi as they came back: the conversation on screen shows it. */
 export const HELLO_EVENT = "maru:hello";
 
+/** Something to ask about was kept or settled: when the app should next look (`detail`, an ISO time or null). */
+export const ASKS_EVENT = "maru:asks";
+
 const HELLO_KEY = "kata-hello";
 const HELLO_GAP = 30 * 60_000;
 

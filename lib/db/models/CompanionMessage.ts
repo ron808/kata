@@ -17,7 +17,7 @@ export interface IQuickReply {
   value: string;
 }
 
-export const RECEIPT_KINDS = ["thread", "memory", "page", "question", "settings", "names", "people", "share", "message", "breakdown", "mission", "open"] as const;
+export const RECEIPT_KINDS = ["thread", "memory", "page", "question", "settings", "names", "people", "share", "message", "breakdown", "mission", "open", "ask"] as const;
 export type ReceiptKind = (typeof RECEIPT_KINDS)[number];
 
 /** Something Maru did, shown as a receipt under its message. */

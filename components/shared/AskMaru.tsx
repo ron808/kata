@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Conversation } from "@/components/home/Conversation";
 import type { KataMessage, ThreadT } from "@/lib/types";
 import { MaruMark } from "./Avatar";
-import { ASK_EVENT, HELLO_EVENT, helloDue, useCompanion, type Focus } from "./Companion";
+import { ASK_EVENT, ASKS_EVENT, HELLO_EVENT, helloDue, useCompanion, type Focus } from "./Companion";
 import { Icon } from "./Icon";
 import { watchPosts } from "./screen";
 import { useToast } from "./Toast";
@@ -26,13 +26,15 @@ const RAISED = ["/entry/new", "/settings/template"];
  * post opens it about that post. Home has the conversation on the page itself, so there the
  * shortcut and the posts' buttons go to it instead.
  */
-export function AskMaru({ pathname, focused = false }: { pathname: string; focused?: boolean }) {
+export function AskMaru({ pathname, focused = false, nextAskAt = null }: { pathname: string; focused?: boolean; nextAskAt?: string | null }) {
   const { toast } = useToast();
   const { name } = useCompanion();
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [focus, setFocus] = useState<Focus | null>(null);
   const [hello, setHello] = useState<KataMessage | null>(null);
+  // When the next thing they asked to be asked about can come up: from the page load, then from what changes it.
+  const [nextAsk, setNextAsk] = useState<string | null>(nextAskAt);
   const opener = useRef<HTMLButtonElement | null>(null);
   const onHome = pathname === "/dashboard";
   // Writing, or in the middle of a conversation with someone: Maru can wait.
@@ -67,6 +69,45 @@ export function AskMaru({ pathname, focused = false }: { pathname: string; focus
       document.removeEventListener("visibilitychange", greet);
     };
   }, [focused, busy]);
+
+  // Something they asked to be asked about: kept or settled in the conversation, the time moves.
+  useEffect(() => {
+    const onAsks = (e: Event) => setNextAsk((e as CustomEvent<string | null>).detail);
+    window.addEventListener(ASKS_EVENT, onAsks);
+    return () => window.removeEventListener(ASKS_EVENT, onAsks);
+  }, []);
+
+  // ...and when its time comes while they're here, it comes up like a hello: in the conversation on
+  // home, else by the button. In a hidden tab it waits until they look; while writing, until they're done.
+  useEffect(() => {
+    if (!nextAsk || busy) return;
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const bringUp = async () => {
+      if (document.visibilityState !== "visible") return;
+      document.removeEventListener("visibilitychange", bringUp);
+      const res = await fetch("/api/companion/asks", { method: "POST" }).catch(() => null);
+      const data = (await res?.json().catch(() => null)) as { messages?: KataMessage[]; next?: string | null } | null;
+      if (!live || !data) return;
+      const messages = data.messages ?? [];
+      if (document.getElementById("tell-maru")) for (const m of messages) window.dispatchEvent(new CustomEvent<KataMessage>(HELLO_EVENT, { detail: m }));
+      else if (messages.length) setHello(messages.at(-1)!);
+      setNextAsk(data.next ?? null);
+    };
+    const due = () => {
+      if (document.visibilityState === "visible") void bringUp();
+      else document.addEventListener("visibilitychange", bringUp);
+    };
+    // Timers can't wait longer than about 24 days; a later one is looked at again on the next load.
+    const wait = new Date(nextAsk).getTime() - Date.now();
+    if (wait <= 0) due();
+    else if (wait < 2 ** 31 - 1) timer = setTimeout(due, wait);
+    return () => {
+      live = false;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", bringUp);
+    };
+  }, [nextAsk, busy]);
 
   // A post's "Ask Maru": open about it. An open panel's conversation takes it up itself.
   useEffect(() => {

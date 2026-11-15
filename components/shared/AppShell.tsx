@@ -29,6 +29,8 @@ export interface ShellUser {
   /** The mission they're focused on, if any. */
   focus: FocusState | null;
   focusTheme: FocusTheme;
+  /** When the next thing they asked to be asked about can come up (lib/companion/asks.ts). */
+  nextAskAt: string | null;
 }
 
 const NAV: { href: string; label: string; icon: IconName }[] = [
@@ -108,7 +110,7 @@ export function AppShell({
           <main id="main" className="min-w-0">
             {children}
           </main>
-          <AskMaru pathname={pathname} focused />
+          <AskMaru pathname={pathname} focused nextAskAt={user.nextAskAt} />
         </div>
       </CompanionProvider>
     );
@@ -200,7 +202,7 @@ export function AppShell({
           </motion.div>
         </main>
 
-        <AskMaru pathname={pathname} />
+        <AskMaru pathname={pathname} nextAskAt={user.nextAskAt} />
 
         {/* Compact tab bar; hidden in focus modes, which have their own save bar. */}
         {!focused ? (

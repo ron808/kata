@@ -1,5 +1,6 @@
 import { CompanionMessage, type ICompanionMessage } from "@/lib/db/models/CompanionMessage";
 import { openMissions, toMissionT } from "@/lib/missions";
+import { bringUpAsks } from "./asks";
 import { nextUp, missionName, tally } from "@/lib/missions/core";
 import { whereWeAre } from "@/lib/missions/prompts";
 import { interestTags, roleKeyOf } from "@/lib/questions/daily";
@@ -90,7 +91,8 @@ async function helloDraft(ctx: EngineCtx, messages: ICompanionMessage[]): Promis
   if (ctx.hour < 4) {
     return { ...base, kind: "question", text: `${hi} Anything on your mind before you sleep?`, replies: [say("Open today’s page"), { label: "Just looking", value: "later" }] };
   }
-  return { ...base, kind: "question", text: `${hi} What’s next?`, replies: [say("Make a to-do list"), say("Open today’s page")] };
+  // A plan from their threads (planNow), or the list form when there's nothing to plan from.
+  return { ...base, kind: "question", text: `${hi} What’s next?`, replies: [say(ctx.hour >= 18 ? "Plan tomorrow" : "Plan my day"), say("Open today’s page")] };
 }
 
 /** A hello for someone who's just come back, or null when one wouldn't make sense. */
@@ -98,6 +100,9 @@ export async function sayHello(userId: string): Promise<KataMessage | null> {
   const { ctx, messages, created } = await ensureToday(userId);
   // The day's first visit has its own greeting, and focus has its own questions.
   if (created.length || ctx.user.focusMissionId) return null;
+  // Something they asked to be asked about comes before any hello: they chose the time.
+  const asked = await bringUpAsks(ctx);
+  if (asked.created.length) return toKataMessage(asked.created.at(-1)!);
   const said = messages.filter((m) => !(m.hello && m.answer === null));
   const last = said.at(-1);
   if (last && ctx.now.getTime() - new Date(last.createdAt).getTime() < RECENT_MS) return null;
