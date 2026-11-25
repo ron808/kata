@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { jsonError, requireUser } from "@/lib/api";
 import { checkLimit, limiters } from "@/lib/ratelimit/upstash";
+import { OverBudget } from "@/lib/ai/budget";
 import { isGroqConfigured } from "@/lib/ai/groq";
-import { answerFreely, askNow, asksSomething, breakDown, busy, choose, converse, goTo, missionWords, patternsNow, planNow, statusNow, type MaruExchange, type Seen } from "@/lib/companion/brain";
+import { answerFreely, askNow, asksSomething, breakDown, busy, choose, spent, converse, goTo, missionWords, patternsNow, planNow, statusNow, type MaruExchange, type Seen } from "@/lib/companion/brain";
 import { answer, answerStep, moodSaid, say } from "@/lib/companion/engine";
 import { companionError } from "@/lib/companion/http";
 import { loadCompanion } from "@/lib/companion/load";
@@ -37,6 +38,7 @@ async function talk(userId: string, text: string, seen: Seen): Promise<MaruExcha
   try {
     return await converse(userId, text, seen);
   } catch (err) {
+    if (err instanceof OverBudget) return spent(userId, text);
     console.error("companion:brain", err);
     // The rules only know news about threads: talk about posts waits for the model.
     const posts = /^\/(?:people|u\/)/.test(seen.where ?? "") || Boolean(seen.focus);

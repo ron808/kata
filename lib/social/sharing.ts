@@ -1,5 +1,4 @@
 import { Types } from "mongoose";
-import { Conversation, conversationKey } from "@/lib/db/models/Conversation";
 import { Follow } from "@/lib/db/models/Follow";
 import { REACTION_KINDS, type ReactionKind } from "@/lib/db/models/Moment";
 import { Notification } from "@/lib/db/models/Notification";
@@ -12,8 +11,9 @@ import { localDay, validTimeZone } from "@/lib/companion/time";
 import type { FriendT, SharedRowT, SharedThreadT, ThreadUpdateT, Who } from "@/lib/types";
 import { isObjectId } from "./db";
 import { hueOf } from "./dto";
-import { HANDLE_PATTERN, normalizeHandle } from "./handles";
+import { HANDLE_PATTERN, byHandle, byHandles, normalizeHandle } from "./handles";
 import { notify, unnotify } from "./notify";
+import { blockedAmong } from "./visibility";
 
 /*
  * Shared threads. A writer shares one of their threads with friends: people they follow who follow
@@ -27,6 +27,8 @@ import { notify, unnotify } from "./notify";
 
 export const SHARE_MOST = 12;
 export const UPDATES_PAGE = 40;
+/** Updates one person can add to one thread in a day. */
+export const UPDATES_A_DAY = 30;
 
 type Outcome<T> = { ok: true; value: T } | { ok: false; error: string; status: number };
 const fail = (error: string, status: number): { ok: false; error: string; status: number } => ({ ok: false, error, status });
@@ -54,13 +56,6 @@ async function ownThread(viewer: string, threadId: string): Promise<Doc | null> 
 }
 
 /** Of `ids`, those with a block between them and the viewer, either way. */
-async function blockedAmong(viewer: string, ids: Types.ObjectId[]): Promise<Set<string>> {
-  if (!ids.length) return new Set();
-  const convos = await Conversation.find({ key: { $in: ids.map((id) => conversationKey(viewer, String(id))) }, "blockedBy.0": { $exists: true } })
-    .select("members")
-    .lean();
-  return new Set(convos.flatMap((c) => c.members.map(String)).filter((id) => id !== viewer));
-}
 
 /** Of `ids`, the viewer's friends: they follow each other, with no block either way. */
 async function friendsOf(viewer: string, ids: Types.ObjectId[]): Promise<Set<string>> {
@@ -224,7 +219,7 @@ export async function share(viewer: string, threadId: string, handles: string[])
   if (t.archived) return fail(ARCHIVED, 409);
   const wanted = [...new Set(handles.map(normalizeHandle))].filter((h) => HANDLE_PATTERN.test(h));
   if (!wanted.length) return fail("Pick someone to share it with.", 400);
-  const users = await User.find({ handle: { $in: wanted } }).select("_id").lean<{ _id: Types.ObjectId }[]>();
+  const users = await User.find(byHandles(wanted)).select("_id").lean<{ _id: Types.ObjectId }[]>();
   const ids = users.map((u) => u._id).filter((id) => !same(id, viewer));
   const friends = await friendsOf(viewer, ids);
   if (users.length !== wanted.length || !ids.length || ids.some((id) => !friends.has(String(id)))) {
@@ -244,7 +239,7 @@ export async function share(viewer: string, threadId: string, handles: string[])
 export async function unshare(viewer: string, threadId: string, handle: string): Promise<Outcome<SharedThreadT>> {
   const t = await ownThread(viewer, threadId);
   if (!t) return fail("Not found", 404);
-  const u = await User.findOne({ handle: normalizeHandle(handle) }).select("_id").lean<{ _id: Types.ObjectId }>();
+  const u = await User.findOne(byHandle(normalizeHandle(handle))).select("_id").lean<{ _id: Types.ObjectId }>();
   if (!u || !isOn(t, String(u._id))) return fail("It isn’t shared with them.", 404);
   await Thread.updateOne({ _id: t._id }, { $pull: { with: u._id } });
   await Promise.all([note(t, viewer, "unshared", [u._id]), Notification.deleteMany({ userId: u._id, threadId: t._id })]);
@@ -290,6 +285,9 @@ export async function post(viewer: string, threadId: string, text: string): Prom
   const t = o.value;
   const said = words(text, UPDATE_MAX);
   if (!said) return fail("Write something first.", 400);
+  // A day's worth from one person on one thread, so a script can't fill the database (or someone's bell).
+  const lately = await ThreadUpdate.countDocuments({ threadId: t._id, by: viewer, kind: "update", createdAt: { $gte: new Date(Date.now() - 86_400_000) } });
+  if (lately >= UPDATES_A_DAY) return fail("That’s a lot of updates for one day. Add more tomorrow.", 429);
   await ThreadUpdate.create({ threadId: t._id, ownerId: t.userId, by: viewer, kind: "update", text: said });
   const others = [t.userId, ...t.with].filter((id) => !same(id, viewer));
   await Promise.all(others.map((id) => notify({ userId: id, actorId: viewer, kind: "update", momentId: null, threadId: t._id }, { fresh: true })));
@@ -360,6 +358,9 @@ export async function leaveAllShared(uid: Types.ObjectId): Promise<void> {
 }
 
 /** A block takes each person off the other's shared threads, without a word on them. */
-export async function blockShared(a: Types.ObjectId, b: Types.ObjectId): Promise<void> {
+/** Takes each of two people off the other’s shared threads: a block, or no longer following each other. */
+export async function blockShared(first: Types.ObjectId | string, second: Types.ObjectId | string): Promise<void> {
+  const a = new Types.ObjectId(String(first));
+  const b = new Types.ObjectId(String(second));
   await Promise.all([Thread.updateMany({ userId: a, with: b }, { $pull: { with: b } }), Thread.updateMany({ userId: b, with: a }, { $pull: { with: a } })]);
 }

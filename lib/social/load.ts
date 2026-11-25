@@ -4,11 +4,12 @@ import { Notification } from "@/lib/db/models/Notification";
 import { Thread } from "@/lib/db/models/Thread";
 import { User } from "@/lib/db/models/User";
 import type { MomentT, NotificationT, PersonT, ThreadKind, ThreadStatus } from "@/lib/types";
-import { HANDLE_PATTERN, normalizeHandle, suggestHandle } from "./handles";
+import { HANDLE_PATTERN, byHandle, normalizeHandle, suggestHandle } from "./handles";
 import { PERSON_FIELDS, momentsFor, notificationsFor, peopleFor, toProfile, type ProfileT } from "./dto";
 import { feed, type FeedOptions, type FeedPage } from "./feed";
 import { discoverPeople, suggestedPeople, type PeopleFilters } from "./people";
-import { visibleTo } from "./visibility";
+import { blockedBetween, visibleTo } from "./visibility";
+import { Conversation, conversationKey } from "@/lib/db/models/Conversation";
 
 // Server-side loaders for pages and the API alike. Each takes the signed-in viewer's id.
 
@@ -28,6 +29,8 @@ export interface ProfilePageT {
   person: PersonT;
   moments: MomentT[];
   sharedThreads: SharedThreadT[];
+  /** The viewer has blocked them (the profile offers Unblock). */
+  blocked: boolean;
 }
 
 export async function loadMe(viewerId: string): Promise<ProfileT | null> {
@@ -47,11 +50,16 @@ export async function loadProfile(viewerId: string, rawHandle: string): Promise<
   const handle = normalizeHandle(rawHandle);
   if (!HANDLE_PATTERN.test(handle)) return null;
   await connectDB();
-  const user = await User.findOne({ handle }).select(PERSON_FIELDS).lean();
+  const user = await User.findOne(byHandle(handle)).select(PERSON_FIELDS).lean();
   if (!user) return null;
   const [person] = await peopleFor(viewerId, [user]);
   if (!person) return null;
 
+  // Across a block, either way, a profile shows who they are and nothing they shared.
+  if (await blockedBetween(viewerId, String(user._id))) {
+    const blocked = Boolean(await Conversation.exists({ key: conversationKey(viewerId, String(user._id)), blockedBy: viewerId }));
+    return { person, moments: [], sharedThreads: [], blocked };
+  }
   const friends = person.isFollowing && person.followsYou;
   const [moments, threads] = await Promise.all([
     Moment.find({ userId: user._id, ...visibleTo(viewerId, friends ? [user._id] : []) })
@@ -66,6 +74,7 @@ export async function loadProfile(viewerId: string, rawHandle: string): Promise<
   ]);
   return {
     person,
+    blocked: false,
     moments: await momentsFor(viewerId, moments),
     sharedThreads: threads.map((t) => ({
       title: t.title,
@@ -93,7 +102,7 @@ export async function loadNotifications(
 ): Promise<{ items: NotificationT[]; unread: number }> {
   await connectDB();
   const [items, unread] = await Promise.all([
-    Notification.find({ userId: viewerId })
+    Notification.find({ userId: viewerId, gone: { $ne: true } })
       .sort({ createdAt: -1, _id: -1 })
       .limit(NOTIFICATIONS)
       .lean(),

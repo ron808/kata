@@ -46,7 +46,8 @@ async function helloDraft(ctx: EngineCtx, messages: ICompanionMessage[]): Promis
     return {
       ...base,
       kind: "question",
-      text: `${hi} ${name} has ${count(left)} thing${left === 1 ? "" : "s"} left. Bring ${left === 1 ? "it" : "them"} to today?`,
+      // Before four the day ahead is where a list goes (listDay), and that's tomorrow to them.
+      text: `${hi} ${name} has ${count(left)} thing${left === 1 ? "" : "s"} left. Bring ${left === 1 ? "it" : "them"} to ${ctx.hour < 4 ? "tomorrow" : "today"}?`,
       choices: [
         { label: left === 1 ? "Bring it over" : "Bring them over", detail: "", kind: "mission", tool: "carry_mission", args: { mission: String(stale._id) }, editable: false, public: false, inputs: [], action: "" },
         { label: "Wrap it up", detail: "", kind: "mission", tool: "end_mission", args: { how: "finish", mission: String(stale._id) }, editable: false, public: false, inputs: [], action: "" },

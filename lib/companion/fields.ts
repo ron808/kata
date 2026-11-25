@@ -119,15 +119,34 @@ export function specLabel(text: string): string {
 
 const amount = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
 
-const TIMES_A_WEEK = /\b(\d)\s*(?:x|times?)\s*(?:a|per)\s*week\b/i;
-const HOW_OFTEN = /\b(?:\d\s*(?:x|times?)\s*(?:a|per)\s*week|(?:twice|once) (?:a|per) week|every other day|weekly)\b/i;
+// "3x a week", "three times a week", "3 days a week", "3x/week", "3 times weekly".
+const COUNTS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6 };
+const PER_WEEK = "(\\d|one|two|three|four|five|six)\\s*(?:x|times?|days?)\\s*(?:(?:a|per|each)\\s*|\\/\\s*)?week(?:ly)?";
+const TIMES_A_WEEK = new RegExp(`\\b${PER_WEEK}\\b`, "i");
+const HOW_OFTEN = new RegExp(`\\b(?:${PER_WEEK}|(?:twice|once) (?:a|per) week|every other day|weekly)\\b`, "i");
 
 /** Days a habit can go without breaking its run: "Gym 3x a week" has rest days built in. Daily ones have none. */
 export function habitGap(title: string): number {
   if (/\bevery other day\b/i.test(title)) return 2;
   const said = TIMES_A_WEEK.exec(title);
-  const times = said ? Number(said[1]) : /\btwice (?:a|per) week\b/i.test(title) ? 2 : /\b(?:once (?:a|per) week|weekly)\b/i.test(title) ? 1 : 7;
+  const times = said
+    ? Number(said[1]) || COUNTS[said[1].toLowerCase()]
+    : /\btwice (?:a|per) week\b/i.test(title)
+      ? 2
+      : /\b(?:once (?:a|per) week|weekly)\b/i.test(title)
+        ? 1
+        : 7;
   return times >= 1 && times < 7 ? Math.ceil(7 / times) : 1;
+}
+
+/** How many times a week a habit is meant: 7 for a daily one, 3.5 for every other day. */
+export function habitTimes(title: string): number {
+  const gap = habitGap(title);
+  if (gap === 1) return 7;
+  if (/\bevery other day\b/i.test(title)) return 3.5;
+  const said = TIMES_A_WEEK.exec(title);
+  if (said) return Number(said[1]) || COUNTS[said[1].toLowerCase()];
+  return /\btwice (?:a|per) week\b/i.test(title) ? 2 : 1;
 }
 
 /** A habit's run as it reads: "4-day streak", but "3x a week" has days between. */
@@ -136,6 +155,7 @@ export const habitRun = (streak: number, title: string) => (habitGap(title) > 1 
 /** A habit as said in a sentence, without how often: "Gym 3x a week" is "Gym". */
 export function habitName(title: string): string {
   const bare = title
+    .replace(new RegExp(`[\\s,:–-]*\\b${PER_WEEK}\\b`, "gi"), "")
     .replace(/[\s,:–-]*\b(?:\d\s*(?:x|times?)\s*(?:a|per)\s*(?:week|day)|every ?day|every other day|each day|every week|twice (?:a|per) week|once (?:a|per) week|daily|weekly)\b/gi, "")
     .trim();
   return bare || title;

@@ -6,6 +6,7 @@ import { User } from "@/lib/db/models/User";
 import { PasswordResetToken } from "@/lib/db/models/PasswordResetToken";
 import { ResetPasswordSchema } from "@/lib/validation/schemas";
 import { handleError, jsonError } from "@/lib/api";
+import { sessionsChanged } from "@/lib/auth/sessions";
 import { checkLimit, clientIdentifier, limiters } from "@/lib/ratelimit/upstash";
 
 export async function POST(request: Request) {
@@ -26,7 +27,9 @@ export async function POST(request: Request) {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
-    await User.updateOne({ _id: record.userId }, { $set: { passwordHash } });
+    // A reset ends every session made with the old password: someone who took the account is out.
+    await User.updateOne({ _id: record.userId }, { $set: { passwordHash, loginFails: 0, loginFailAt: null }, $inc: { sessionVersion: 1 } });
+    sessionsChanged(String(record.userId));
     // Single-use: delete this token, and any other outstanding tokens for the user.
     await PasswordResetToken.deleteMany({ userId: record.userId });
 

@@ -20,6 +20,8 @@ export interface INotification {
   threadId?: mongoose.Types.ObjectId | null;
   reaction: ReactionKind | null;
   read: boolean;
+  /** Withdrawn (an unfollow, a reaction or cheer taken back): kept, read and hidden, so toggling it on again can't notify twice. */
+  gone?: boolean;
   createdAt: Date;
 }
 
@@ -32,6 +34,7 @@ const NotificationSchema = new Schema<INotification>(
     threadId: { type: Schema.Types.ObjectId, ref: "Thread", default: null },
     reaction: { type: String, enum: [...REACTION_KINDS, null], default: null },
     read: { type: Boolean, default: false },
+    gone: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now },
   },
   { timestamps: false }

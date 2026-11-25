@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { handleError, jsonError, requireUser } from "@/lib/api";
 import { contextFor } from "@/lib/companion/engine";
 import { checkLimit, limiters } from "@/lib/ratelimit/upstash";
-import { createMission, focusOn, listMissions, toMissionT } from "@/lib/missions";
+import { createMission, listDay, focusOn, listMissions, toMissionT } from "@/lib/missions";
 import { endsFrom, parseTasks } from "@/lib/missions/parse";
 import { NewMissionSchema } from "@/lib/missions/schemas";
 
@@ -27,8 +27,9 @@ export async function POST(request: Request) {
 
     const data = NewMissionSchema.parse(await request.json().catch(() => null));
     const ctx = await contextFor(session.user.id);
-    const when = { day: ctx.day, now: ctx.now, tz: ctx.tz };
-    const made = await createMission(ctx, { title: data.title, tasks: parseTasks(data.tasks, when), endsAt: data.until ? endsFrom(data.until, when) : null });
+    const day = listDay(ctx);
+    const when = { day, now: ctx.now, tz: ctx.tz };
+    const made = await createMission(ctx, { title: data.title, day, tasks: parseTasks(data.tasks, when), endsAt: data.until ? endsFrom(data.until, when) : null });
     const mission = data.focus ? ((await focusOn(ctx, String(made._id))) ?? made) : made;
     return NextResponse.json({ mission: toMissionT(mission, ctx) }, { status: 201 });
   } catch (err) {

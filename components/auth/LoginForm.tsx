@@ -28,7 +28,11 @@ export function LoginForm({ next = "/dashboard" }: { next?: string }) {
     try {
       const res = await signIn("credentials", { email, password, redirect: false });
       if (res?.error) {
-        setFormError("That email and password don’t match. Try again, or reset your password.");
+        setFormError(
+          res.code === "too_many"
+            ? "Too many wrong passwords for now. Try again in 15 minutes, or reset your password."
+            : "That email and password don’t match. Try again, or reset your password."
+        );
         setLoading(false);
         return;
       }

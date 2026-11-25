@@ -5,12 +5,25 @@ import { CheckInAside } from "@/components/auth/AuthAsides";
 import { AuthFrame } from "@/components/auth/AuthFrame";
 import { LoginForm } from "@/components/auth/LoginForm";
 
-/** Only paths inside Kata: "/people" yes, "//evil.example" and "https://…" no. */
+const HOME = "https://kata.invalid";
+
+/**
+ * Only paths inside Kata: "/people" yes, "//evil.example", "https://…" and "/\t/evil.example"
+ * (browsers drop tabs and newlines, which turns it into "//evil.example") no. The path is read
+ * the way a browser will read it, and only what stays on Kata's own origin is kept.
+ */
 function safeNext(from: string | string[] | undefined): string {
   const path = Array.isArray(from) ? from[0] : from;
-  if (!path || !path.startsWith("/") || path.startsWith("//") || path.startsWith("/\\")) return "/dashboard";
-  if (path.startsWith("/login") || path.startsWith("/register")) return "/dashboard";
-  return path;
+  if (!path || !path.startsWith("/") || /[\\\u0000-\u001f\u007f]/.test(path)) return "/dashboard";
+  let url: URL;
+  try {
+    url = new URL(path, HOME);
+  } catch {
+    return "/dashboard";
+  }
+  if (url.origin !== HOME) return "/dashboard";
+  if (url.pathname.startsWith("/login") || url.pathname.startsWith("/register")) return "/dashboard";
+  return url.pathname + url.search + url.hash;
 }
 
 export default async function LoginPage(props: { searchParams: Promise<{ from?: string | string[] }> }) {

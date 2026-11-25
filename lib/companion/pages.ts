@@ -44,7 +44,7 @@ export async function updateThreadsFromPage(
   const tz = validTimeZone(user?.timezone);
   const now = new Date();
   const ctx: Ctx = { userId, tz, now, day: localDay(tz, now) };
-  const candidates = await threadsFromEntry(page, { known: await knownThreads(userId), today: ctx.day });
+  const candidates = await threadsFromEntry(page, { known: await knownThreads(userId), today: ctx.day, by: userId });
   const applied = await applyCandidates(ctx, candidates, { from: "page", source: "page" });
   const latest = await Entry.findOne({ userId }).sort({ date: -1 }).select("_id").lean();
   if (latest && String(latest._id) === page._id) await reconcilePage(ctx, applied.keys);

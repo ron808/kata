@@ -5,6 +5,14 @@ export interface IUser {
   name: string;
   email: string;
   passwordHash: string;
+  /** Raised when the password changes or the account goes: every session made before it ends. */
+  sessionVersion?: number;
+  /** Wrong passwords since loginFailAt: ten in fifteen minutes and sign-in waits out the rest. */
+  loginFails?: number;
+  loginFailAt?: Date | null;
+  /** Model calls this writer started on modelDay (UTC): lib/ai/budget.ts. */
+  modelDay?: string;
+  modelCalls?: number;
   role: string;
   timezone: string;
   activeTemplateId: mongoose.Types.ObjectId | null;
@@ -76,6 +84,11 @@ const UserSchema = new Schema<IUser>(
       index: true,
     },
     passwordHash: { type: String, required: true },
+    sessionVersion: { type: Number, default: 0 },
+    loginFails: { type: Number, default: 0 },
+    loginFailAt: { type: Date, default: null },
+    modelDay: { type: String, default: "" },
+    modelCalls: { type: Number, default: 0 },
     role: { type: String, default: "Custom" },
     timezone: { type: String, default: "UTC" },
     activeTemplateId: {

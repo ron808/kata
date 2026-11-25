@@ -1,7 +1,7 @@
 import { connectDB } from "@/lib/db/mongoose";
 import { User } from "@/lib/db/models/User";
 import { hueOf } from "./dto";
-import { HANDLE_PATTERN, normalizeHandle } from "./handles";
+import { HANDLE_PATTERN, byHandle, normalizeHandle } from "./handles";
 
 /**
  * What a shared profile link shows anyone, signed in or not: the same things a profile shows
@@ -20,7 +20,7 @@ export async function shareCard(raw: string): Promise<ShareCardT | null> {
   const handle = normalizeHandle(raw);
   if (!HANDLE_PATTERN.test(handle)) return null;
   await connectDB();
-  const user = await User.findOne({ handle }).select("name handle bio role hue").lean();
+  const user = await User.findOne(byHandle(handle)).select("name handle bio role hue").lean();
   if (!user?.handle) return null;
   return {
     name: user.name,

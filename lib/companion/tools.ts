@@ -13,7 +13,7 @@ import { Template, type ITemplate, type ITemplateField } from "@/lib/db/models/T
 import { THREAD_KINDS, THREAD_STATUSES, Thread, threadKey, type IThread, type IThreadField, type ThreadKind, type ThreadStatus } from "@/lib/db/models/Thread";
 import { CHECK_INS, User } from "@/lib/db/models/User";
 import { PageError, savePage } from "@/lib/entries/save";
-import { changeMission, clockText, createMission, endMission, focusOff, focusOn, keepAsThreads, listMissions, openMissions, runAgain, toMissionT } from "@/lib/missions";
+import { changeMission, clockText, createMission, endMission, focusOff, focusOn, keepAsThreads, listDay, listMissions, openMissions, runAgain, toMissionT } from "@/lib/missions";
 import { Finished, NoSuchTask, type Change } from "@/lib/missions/apply";
 import { missionName, nextUp, tally } from "@/lib/missions/core";
 import { endsFrom, parseTasks } from "@/lib/missions/parse";
@@ -26,7 +26,7 @@ import { checkLimit, limiters } from "@/lib/ratelimit/upstash";
 import { follow, replyTo, shareMoment, unfollow } from "@/lib/social/actions";
 import { sendMessage } from "@/lib/social/messages";
 import { areFriends } from "@/lib/social/visibility";
-import { NEEDS_PROFILE, handleOf, normalizeHandle } from "@/lib/social/handles";
+import { NEEDS_PROFILE, byHandle, handleOf, normalizeHandle } from "@/lib/social/handles";
 import type { EntryField, FieldType, FieldValue, ReplyT } from "@/lib/types";
 import type { EngineCtx } from "./engine";
 import { FIELDS_MAX, TRACKED_KINDS, fieldKey, guessFields, habitName, habitRun, parseTrack, specText, valueText, valuesIn, withHowOften } from "./fields";
@@ -84,6 +84,8 @@ export interface Turn {
   here: string | null;
   /** The words of the exchange just before, for "yes" and "log it". Null when they tapped: a tap is always on topic. */
   before: string | null;
+  /** The tools the model was given this round: it can't run one it wasn't offered. Null outside the model. */
+  offered?: Set<string> | null;
 }
 
 export function newTurn(ctx: EngineCtx, said: string, screen: ScreenItem[] = [], where: string | null = null, here: string | null = null): Turn {
@@ -1177,6 +1179,29 @@ function wrongPost(turn: Turn, post: ScreenItem, args: Args): boolean {
   return turn.screen.length > 1 && post.momentId !== turn.here;
 }
 
+/** Words too common to give anything away, though long enough to be checked. */
+const COMMON_WORDS = new Set(
+  "about after again always another around before being better could doing every first going great happy having really right since still thanks thing things think those through today together tomorrow would yesterday maybe little pretty start started trying while where which their there these other people friend friends weekend morning evening night lately looking hoping glad sounds amazing awesome lovely".split(" ")
+);
+
+/**
+ * A word in a draft others will see that comes from something private (a thread not on their
+ * profile, or a memory), unless they or the post said it this turn. The model is told the rule;
+ * this is code holding it.
+ */
+async function privateWord(turn: Turn, drafts: string[]): Promise<string | null> {
+  const threads = await Thread.find({ userId: turn.ctx.userId, shared: { $ne: true } }).select("title nextStep").limit(60).lean();
+  const sources = [...threads.flatMap((t) => [t.title, t.nextStep ?? ""]), ...(turn.ctx.user.memories ?? []).map((m) => m.text)];
+  const stems = new Set(sources.flatMap((s) => (s.toLowerCase().match(/\p{L}{5,}/gu) ?? []).filter((w) => !COMMON_WORDS.has(w)).map((w) => w.slice(0, 6))));
+  const open = `${turn.said} ${turn.screen.map((s) => s.text).join(" ")}`.toLowerCase();
+  for (const d of drafts) {
+    for (const w of d.toLowerCase().match(/\p{L}{5,}/gu) ?? []) {
+      if (!COMMON_WORDS.has(w) && stems.has(w.slice(0, 6)) && !open.includes(w.slice(0, 6))) return w;
+    }
+  }
+  return null;
+}
+
 async function draftReplies(turn: Turn, args: Args): Promise<string> {
   const post = postFrom(turn, args);
   if (!post) throw new Unable(`There's no post ${String(args.post)} on the screen.`);
@@ -1189,6 +1214,8 @@ async function draftReplies(turn: Turn, args: Args): Promise<string> {
   if (post.isMine) throw new Unable("That's their own post.");
   const drafts = [...new Set(list(args.replies).map((r) => r.replace(/^["“]|["”]$/g, "").slice(0, 300)))].slice(0, 3);
   if (!drafts.length) throw new Unable("Replies need words.");
+  const leak = await privateWord(turn, drafts);
+  if (leak) throw new Unable("Couldn’t draft that without something private.", `"${leak}" comes from their private threads or memories, which others never see. Draft again with only what they said here, and a blank like [what you’re up to] for the rest.`);
   for (const text of drafts) {
     turn.choices.push({
       label: "Post reply",
@@ -1211,10 +1238,12 @@ async function draftMessage(turn: Turn, args: Args): Promise<string> {
   const handle = normalizeHandle((str(args.to) ?? "").replace(/^@/, ""));
   const text = (str(args.text) ?? "").slice(0, 600);
   if (!handle) throw new Unable("Who to? Give their @handle.");
-  const them = await User.findOne({ handle }).select("name handle").lean();
+  const them = await User.findOne(byHandle(handle)).select("name handle").lean();
   if (!them?.handle) throw new Unable(`There's nobody called @${handle}.`);
   if (String(them._id) === turn.ctx.userId) throw new Unable("That's them.");
   const first = them.name.split(/\s+/)[0] || them.name;
+  const leak = await privateWord(turn, [text]);
+  if (leak) throw new Unable("Couldn’t draft that without something private.", `"${leak}" comes from their private threads or memories. Draft again with only what they said here, and a blank for the rest.`);
   // Only friends can write, so a draft nobody could send isn't offered.
   if (!(await areFriends(turn.ctx.userId, String(them._id)))) throw new Unable(`You and ${first} need to follow each other before either of you can write.`);
   turn.choices.push({
@@ -1363,7 +1392,7 @@ function focused(turn: Turn, m: Pick<IMission, "_id">, on: boolean) {
 
 async function startMissionTool(turn: Turn, args: Args): Promise<string> {
   const { ctx } = turn;
-  const day = /^\d{4}-\d{2}-\d{2}$/.test(str(args.day) ?? "") ? str(args.day)! : ctx.day;
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(str(args.day) ?? "") ? str(args.day)! : listDay(ctx);
   const when = whenOn(ctx, day);
   const tasks = parseTasks(taskWords(args.tasks), when);
   const title = capFirst((str(args.title) ?? "").replace(/\s+/g, " ")).slice(0, 80);
@@ -1637,7 +1666,8 @@ async function keepTasks(turn: Turn, args: Args): Promise<string> {
 
 /** A day's list that's still going, moved on to today. Only ever from a tap. */
 async function carryMission(turn: Turn, args: Args): Promise<string> {
-  const m = await changed(turn, str(args.mission) ?? "", { do: "carry", day: turn.ctx.day });
+  // Over to the day a new list is for: before four in the morning, the day ahead.
+  const m = await changed(turn, str(args.mission) ?? "", { do: "carry", day: listDay(turn.ctx) });
   receipt(turn, "mission", `On ${missionName(m, turn.ctx.day)}`, plural(tally(m.tasks).left, "task"), missionHref(m));
   turn.choices.push(focusChoice(m, turn.ctx));
   turn.ask ??= "Focus on it now?";
@@ -1879,7 +1909,7 @@ export async function placeAsked(userId: string, said: string): Promise<{ href: 
   const profile = target.match(/^@?([a-z0-9_]{3,24})(?:['’]s)?\s+profile$|^@([a-z0-9_]{3,24})$/i);
   if (profile) {
     const handle = normalizeHandle(profile[1] ?? profile[2]);
-    return (await User.exists({ handle })) ? { href: `/u/${handle}`, name: `@${handle}’s profile` } : null;
+    return (await User.exists(byHandle(handle))) ? { href: `/u/${handle}`, name: `@${handle}’s profile` } : null;
   }
   const key = norm(target.replace(/’/g, "'")).replace(/(?:\s+(?:page|tab|screen|please|for me|now))+$/, "");
   if (key === "profile") {
@@ -2440,10 +2470,33 @@ const COMMIT: Record<string, Tool> = { keep_tasks: keepTasks, carry_mission: car
  * is something to read (search_pages): then Maru answers from the result, not from what it
  * said alongside the call.
  */
+/** With other people’s posts in the prompt, only these run without a tap: their words can’t act through Maru. */
+const SCREEN_SAFE = new Set(["search_pages", "offer_choices", "draft_replies", "open_page"]);
+
+/**
+ * What waits for the writer’s tap however it was asked: anything others could have steered,
+ * while their posts are in the prompt, and anything that changes what other people see.
+ */
+function tapOnly(turn: Turn, name: string, args: Args): boolean {
+  if (name === "follow" || name === "unfollow") return true;
+  if (name === "update_thread" && args.shared === true) return true;
+  return turn.screen.length > 0 && !SCREEN_SAFE.has(name);
+}
+
+/** The call becomes a button they tap (or nothing, if it can’t be one): it never runs on the model’s word. */
+async function offerInstead(turn: Turn, name: string, args: Args): Promise<{ out: string; ok: boolean }> {
+  if (!CHOOSABLE.includes(name)) return { out: "Not while other people’s posts are part of this: if they asked for it, they can ask again.", ok: false };
+  const before = turn.choices.length;
+  await offerChoices(turn, { choices: [{ label: name, do: { tool: name, args } }] });
+  return turn.choices.length > before
+    ? { out: "Offered as a button: nothing changes until they tap it.", ok: true }
+    : { out: "That wasn’t offered: it would change nothing, or isn’t about what they said.", ok: false };
+}
+
 export async function runTool(turn: Turn, call: ChatCompletionMessageToolCall): Promise<{ out: string; ok: boolean }> {
   const name = call.function.name;
   const run = RUN[name];
-  if (!run) return { out: `There is no tool called ${name}.`, ok: false };
+  if (!run || (turn.offered && !turn.offered.has(name))) return { out: `There is no tool called ${name} for this message.`, ok: false };
   let args: Args;
   try {
     const parsed: unknown = JSON.parse(call.function.arguments || "{}");
@@ -2452,6 +2505,7 @@ export async function runTool(turn: Turn, call: ChatCompletionMessageToolCall): 
     return { out: "Those arguments weren't valid JSON.", ok: false };
   }
   if (ON_A_THREAD.has(name)) args = withThreadArg(args);
+  if (tapOnly(turn, name, args)) return offerInstead(turn, name, args);
   try {
     // A model finishing its last job: logging on a thread they didn't mention, with no number in what they said.
     const stray = name === "log_thread" && (!/\d/.test(turn.said) || !Object.keys((args.values as Args) ?? {}).length) ? await strayThread(turn, name, args) : null;

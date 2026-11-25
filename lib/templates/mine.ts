@@ -6,6 +6,14 @@ import { User } from "@/lib/db/models/User";
 import type { OwnPageT } from "@/lib/types";
 import { isoDay } from "@/lib/utils/dates";
 
+/** Layouts one writer can keep: as many as "Your pages" shows. */
+export const PAGES_MOST = 60;
+
+/** Whether the writer has room for one more layout, made or copied. */
+export async function roomForPage(userId: string): Promise<boolean> {
+  return (await Template.countDocuments({ userId })) < PAGES_MOST;
+}
+
 /** The writer's active page, made from a one-question starter if they skipped choosing one. */
 export async function ensurePage(userId: string): Promise<ITemplate | null> {
   const user = await User.findById(userId).select("activeTemplateId").lean();
@@ -29,7 +37,7 @@ export async function ensurePage(userId: string): Promise<ITemplate | null> {
  */
 export async function myPages(userId: string): Promise<OwnPageT[]> {
   const [docs, user, use] = await Promise.all([
-    Template.find({ userId }).select("name fields clonedFrom isPublished updatedAt").sort({ updatedAt: -1 }).limit(60).lean(),
+    Template.find({ userId }).select("name fields clonedFrom isPublished updatedAt").sort({ updatedAt: -1 }).limit(PAGES_MOST).lean(),
     User.findById(userId).select("activeTemplateId").lean(),
     Entry.aggregate<{ _id: Types.ObjectId; n: number; last: Date }>([
       { $match: { userId: new Types.ObjectId(userId) } },

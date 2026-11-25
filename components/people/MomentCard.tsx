@@ -84,7 +84,7 @@ export function MomentCard({
     <article
       aria-label={moment.isMine ? "Your moment" : `Moment from ${a.name}`}
       data-screen-post={moment._id}
-      className={compact ? "well flex h-full flex-col p-4" : "card flex flex-col p-4 sm:p-6"}
+      className={compact ? "well flex h-full w-full min-w-0 flex-col p-4" : "card flex min-w-0 flex-col p-4 sm:p-6"}
     >
       <header className="flex flex-wrap items-start gap-x-3 gap-y-2">
         <Link href={profile} tabIndex={-1} aria-hidden className="shrink-0">
@@ -92,7 +92,7 @@ export function MomentCard({
         </Link>
         <div className="min-w-0 flex-1 basis-[8.5rem] pt-0.5">
           <p className="flex min-w-0 items-baseline gap-x-1.5 leading-tight">
-            <Link href={profile} className="-mx-2 -my-3 max-w-full shrink-0 truncate px-2 py-3 font-semibold underline-offset-4 hover:underline">
+            <Link href={profile} className="-mx-2 -my-3 min-w-0 max-w-full truncate px-2 py-3 font-semibold underline-offset-4 hover:underline">
               {a.name}
             </Link>
             <span className="min-w-0 truncate text-[0.875rem] text-ink/65">@{a.handle}</span>

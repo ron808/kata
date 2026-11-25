@@ -180,6 +180,14 @@ export function EntryForm({
   const [savedPayload, setSavedPayload] = useState(() =>
     serialize(initialValues(template, asks, initialFields))
   );
+  // The answers as this page last loaded or saved them. A save sends only what changed since,
+  // so what was written on another device (or by Maru) in the meantime isn't overwritten.
+  const savedValues = useRef<Record<string, FieldValue>>(initialValues(template, asks, initialFields));
+  const fieldsOf = (vals: Record<string, FieldValue>): EntryField[] => [
+    ...template.fields.map<EntryField>((f) => ({ fieldId: f.id, type: f.type, label: f.label, value: vals[f.id] ?? null })),
+    // A question cleared is sent empty, so the server clears it too.
+    ...asks.map<EntryField>((a) => ({ fieldId: a.fieldId, type: "long_text", label: a.text, value: typeof vals[a.fieldId] === "string" ? vals[a.fieldId] : "" })),
+  ];
   // What can't be answered yet ("What did you eat for dinner?" at nine) waits, and so does what
   // only a working day answers, unless it's been answered.
   const resting = (label: string) => offDay && workdayOnly(label);
@@ -273,18 +281,22 @@ export function EntryForm({
       return;
     }
     setSaving(true);
+    const sent = values;
+    const before = new Map(fieldsOf(savedValues.current).map((f) => [f.fieldId, JSON.stringify(f.value ?? null)]));
+    const changed = fieldsOf(sent).filter((f) => before.get(f.fieldId) !== JSON.stringify(f.value ?? null));
     try {
       const res = await fetch("/api/entries", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // Your own save (not an autosave) is when Kata reads the page properly.
-        body: opts.silent ? serialized : JSON.stringify({ ...JSON.parse(serialized), final: true }),
+        body: JSON.stringify({ date, fields: changed, ...(opts.silent ? {} : { final: true }) }),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(data.error ?? "Save failed");
       }
       saved.current = true;
+      savedValues.current = sent;
       setSavedPayload(serialized);
       setSavedAt(Date.now());
       if (!opts.silent) toast("Page saved", "success");

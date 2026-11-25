@@ -1,7 +1,6 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { nanoid } from "nanoid";
 import { InterestPicker } from "@/components/settings/InterestPicker";
 import { useHandleStatus } from "@/components/settings/HandleField";
@@ -93,7 +92,6 @@ export function OnboardingFlow({
   /** Today's date, formatted on the server; the visitor's local date replaces it. */
   today: string;
 }) {
-  const router = useRouter();
   // The step Kata is on, and how many of its lines are out so far. The greeting starts out.
   const [at, setAt] = useState(0);
   const [shown, setShown] = useState(2);
@@ -256,7 +254,9 @@ export function OnboardingFlow({
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(data.error ?? "Something went wrong on my side.");
       }
-      router.push(after);
+      // One full load, once per person: the shell then has the handle, names and colour they just chose
+      // (a client navigation could show the old shell from the router's cache).
+      window.location.assign(after);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Something went wrong on my side.");
       setSaving(false);

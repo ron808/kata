@@ -1,5 +1,12 @@
 import { User } from "@/lib/db/models/User";
 
+/**
+ * A query on handles that can use the handle index. The index is partial (only string handles
+ * are in it), and a plain { handle } doesn’t match that filter for the planner, so it read every user.
+ */
+export const byHandle = (handle: string) => ({ handle: { $eq: handle, $type: "string" as const } });
+export const byHandles = (handles: string[]) => ({ handle: { $in: handles, $type: "string" as const } });
+
 export const HANDLE_MIN = 3;
 export const HANDLE_MAX = 24;
 export const HANDLE_PATTERN = /^[a-z0-9_]{3,24}$/;
@@ -64,7 +71,7 @@ export async function checkHandle(raw: string, userId: string): Promise<HandleCh
   const handle = normalizeHandle(raw);
   const problem = handleProblem(handle);
   if (problem) return { ok: false, reason: problem, taken: false };
-  const owner = await User.exists({ handle, _id: { $ne: userId } });
+  const owner = await User.exists({ ...byHandle(handle), _id: { $ne: userId } });
   return owner ? { ok: false, reason: HANDLE_TAKEN, taken: true } : { ok: true, handle };
 }
 
@@ -89,14 +96,14 @@ export async function suggestHandle(name: string): Promise<string> {
     (h) => !RESERVED_HANDLES.has(h)
   );
   const taken = new Set(
-    (await User.find({ handle: { $in: candidates } }).select("handle").lean()).map((u) => u.handle)
+    (await User.find(byHandles(candidates)).select("handle").lean()).map((u) => u.handle)
   );
   const free = candidates.find((h) => !taken.has(h));
   if (free) return free;
 
   for (let attempt = 0; attempt < 5; attempt++) {
     const handle = withSuffix(base, `_${Math.floor(1000 + Math.random() * 9000)}`);
-    if (!(await User.exists({ handle }))) return handle;
+    if (!(await User.exists(byHandle(handle)))) return handle;
   }
   // Only a suggestion: claiming it checks again.
   return withSuffix(base, `_${Date.now().toString(36)}`);

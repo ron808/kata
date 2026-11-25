@@ -5,7 +5,7 @@ import { Thread, threadKey, type IThread } from "@/lib/db/models/Thread";
 import { User, type FocusTheme } from "@/lib/db/models/User";
 import type { EngineCtx } from "@/lib/companion/engine";
 import { habitDone, logItem, nextHue, createThread, saveThread, touch, withLog, type Ctx } from "@/lib/companion/threads";
-import { clockIn } from "@/lib/companion/time";
+import { addDays, clockIn } from "@/lib/companion/time";
 import type { FocusState, MissionT, TaskT } from "@/lib/types";
 import { apply, leftOn, newTask, type Change, type Patch } from "./apply";
 import { lasted, focusedFor, isOpen, missionName, nextUp, spentOn, tally } from "./core";
@@ -106,12 +106,21 @@ export interface NewMission {
   fromId?: Types.ObjectId | null;
 }
 
+/**
+ * The day a new list with no day is for. Before four in the morning the writer's day hasn't
+ * turned, but a list made then is for the day they'll wake up to, as a plan is (planDayFor):
+ * otherwise by breakfast it's "Yesterday's list".
+ */
+export function listDay(ctx: Pick<Ctx, "tz" | "day" | "now">): string {
+  return clockIn(ctx.tz, ctx.now)[0] < 4 ? addDays(ctx.day, 1) : ctx.day;
+}
+
 export async function createMission(ctx: Ctx, input: NewMission): Promise<IMission> {
   const tasks = await linked(ctx, input.tasks.slice(0, TASKS_MAX).map((t, i) => newTask(t, i)));
   const doc = await Mission.create({
     userId: ctx.userId,
     title: (input.title ?? "").trim().slice(0, 80),
-    day: input.day ?? ctx.day,
+    day: input.day ?? listDay(ctx),
     tasks,
     endsAt: input.endsAt ?? null,
     fromId: input.fromId ?? null,
@@ -304,7 +313,7 @@ export async function writeTake(ctx: Pick<EngineCtx, "userId" | "tz" | "day" | "
       temperature: 0.5,
       max_tokens: 400,
     },
-    { models: FAST_MODELS, timeout: 15_000 }
+    { models: FAST_MODELS, timeout: 15_000, by: ctx.userId }
   );
   const take = (res.choices[0]?.message?.content ?? "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim().slice(0, 600);
   if (take) await Mission.updateOne({ _id: m._id, take: "" }, { $set: { take } });

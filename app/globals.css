@@ -17,6 +17,7 @@
   --edge: #1d1915;
   --accent: #e8452b;
   --on-accent: #fff8ee;
+  --accent-fill: #cf3a20; /* the primary button: white on it is 4.6:1, where on --accent it was 3.75:1 */
   /* Marker yellow: selection, the writer's own bubble, the active tab. */
   --sun: #ffc23a;
   --on-sun: #2b1f00;
@@ -48,6 +49,7 @@
     --edge: #e9dfcf;
     --accent: #ff6a4d;
     --on-accent: #1d0c05;
+    --accent-fill: var(--accent);
     --ok: #6fe0ae;
     --bad: #ff9b85;
     --warn: #ffd36b;
@@ -69,6 +71,7 @@
   --edge: #e9dfcf;
   --accent: #ff6a4d;
   --on-accent: #1d0c05;
+  --accent-fill: var(--accent);
   --ok: #6fe0ae;
   --bad: #ff9b85;
   --warn: #ffd36b;
@@ -90,6 +93,7 @@
   --edge: #e9dfcf;
   --accent: #ff6a4d;
   --on-accent: #1d0c05;
+  --accent-fill: var(--accent);
   --ok: #6fe0ae;
   --bad: #ff9b85;
   --warn: #ffd36b;
@@ -144,6 +148,7 @@
   --edge: #5b79a9;
   --accent: #5cc8ff;
   --on-accent: #05202e;
+  --accent-fill: var(--accent);
   --sun: #ffd76a;
 }
 
@@ -156,6 +161,7 @@
   --edge: #5c8f76;
   --accent: #5fe3a1;
   --on-accent: #06231a;
+  --accent-fill: var(--accent);
   --sun: #f2df7c;
 }
 
@@ -168,6 +174,7 @@
   --edge: #a4768b;
   --accent: #ff9466;
   --on-accent: #2b0e03;
+  --accent-fill: var(--accent);
   --sun: #ffc857;
 }
 
@@ -238,6 +245,7 @@
   --color-edge: var(--edge);
   --color-accent: var(--accent);
   --color-on-accent: var(--on-accent);
+  --color-accent-fill: var(--accent-fill);
   --color-sun: var(--sun);
   --color-on-sun: var(--on-sun);
   --color-ok: var(--ok);
@@ -870,6 +878,11 @@
     animation: kata-appear 0.45s var(--ease-out) both;
   }
 
+  /* Each page in the app fades in: opacity only (a transform would trap fixed bars). */
+  .page-in {
+    animation: kata-page-in 0.35s var(--ease-out) both;
+  }
+
   /* The map of what is on your mind: threads as round stickers around you.
      Sizes are container units of the map, so it scales with its card. */
   .map {
@@ -964,6 +977,12 @@
   40% {
     opacity: 1;
     transform: translateY(-2px);
+  }
+}
+
+@keyframes kata-page-in {
+  from {
+    opacity: 0;
   }
 }
 

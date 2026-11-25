@@ -48,11 +48,12 @@ export function minutesIn(text: string): { minutes: number | null; rest: string 
   return { minutes: null, rest: text };
 }
 
-const TIME = "(\\d{1,2})(?::(\\d{2}))?\\s*(a\\.?m\\.?|p\\.?m\\.?)?";
-const END = "(?=[\\s,.;!?)]|$)";
+// "7:30" or "7.30"; a dot before a digit doesn't end a time, so "1.5 hours" is no 1 o'clock.
+const TIME = "(\\d{1,2})(?:[:.](\\d{2}))?\\s*(a\\.?m\\.?|p\\.?m\\.?)?";
+const END = "(?=[\\s,;!?)]|\\.(?!\\d)|$)";
 const FROM_TO = new RegExp(`(?<![\\w:.-])(from\\s+)?${TIME}\\s*(?:-|–|—|to|until|till)\\s*${TIME}${END}`, "i");
 const AT = new RegExp(`(?:\\b(?:at|by|around)\\s+|@\\s*)${TIME}${END}`, "i");
-const WITH_MERIDIEM = /(?<![\w:.-])(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)(?=[\s,.;!?)]|$)/i;
+const WITH_MERIDIEM = /(?<![\w:.-])(\d{1,2})(?:[:.](\d{2}))?\s*(a\.?m\.?|p\.?m\.?)(?=[\s,;!?)]|\.(?!\d)|$)/i;
 const CLOCK = /(?<![\w:.-])([01]?\d|2[0-3]):([0-5]\d)(?![\w:])/;
 const NAMED = /\b(?:at\s+|by\s+|around\s+)?(noon|midday|midnight)\b/i;
 

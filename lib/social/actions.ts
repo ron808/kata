@@ -1,4 +1,5 @@
 import type { Types } from "mongoose";
+import { Conversation, conversationKey } from "@/lib/db/models/Conversation";
 import { Entry } from "@/lib/db/models/Entry";
 import { Follow } from "@/lib/db/models/Follow";
 import { Moment, type MomentKind, type Visibility } from "@/lib/db/models/Moment";
@@ -7,9 +8,10 @@ import { User } from "@/lib/db/models/User";
 import type { MomentT, PersonT, ReplyT } from "@/lib/types";
 import { isDuplicateKey } from "./db";
 import { momentsFor, personFor, repliesFor } from "./dto";
-import { NEEDS_HANDLE, handleOf, normalizeHandle } from "./handles";
+import { NEEDS_HANDLE, byHandle, handleOf, normalizeHandle } from "./handles";
 import { notify, unnotify } from "./notify";
-import { findVisibleMoment } from "./visibility";
+import { blockShared } from "./sharing";
+import { blockedBetween, findVisibleMoment } from "./visibility";
 
 /**
  * Following, sharing and replying, shared by the API routes and Maru so the rules (handles
@@ -21,7 +23,7 @@ export type Outcome<T> = { ok: true; value: T } | { ok: false; error: string; st
 const fail = (error: string, status: number): Outcome<never> => ({ ok: false, error, status });
 
 async function personByHandle(me: string, handle: string): Promise<Outcome<Types.ObjectId>> {
-  const person = await User.findOne({ handle: normalizeHandle(handle) }).select("_id").lean();
+  const person = await User.findOne(byHandle(normalizeHandle(handle))).select("_id").lean();
   if (!person) return fail("Not found", 404);
   if (String(person._id) === me) return fail("You can't follow yourself.", 400);
   return { ok: true, value: person._id };
@@ -32,6 +34,11 @@ export async function follow(me: string, handle: string): Promise<Outcome<Person
   if (!target.ok) return target;
   if (!(await handleOf(me))) return fail(NEEDS_HANDLE, 403);
   const personId = target.value;
+  // Never across a block: whoever blocked unblocks first, and the one blocked finds no one.
+  if (await blockedBetween(me, String(personId))) {
+    const mine = await Conversation.exists({ key: conversationKey(me, String(personId)), blockedBy: me });
+    return mine ? fail("You blocked them. Unblock them first.", 409) : fail("Not found", 404);
+  }
   let created = false;
   try {
     await Follow.create({ followerId: me, followeeId: personId });
@@ -54,16 +61,22 @@ export async function unfollow(me: string, handle: string): Promise<Outcome<Pers
   const target = await personByHandle(me, handle);
   if (!target.ok) return target;
   const personId = target.value;
-  const { deletedCount } = await Follow.deleteOne({ followerId: me, followeeId: personId });
-  if (deletedCount === 1) {
-    await Promise.all([
-      User.updateOne({ _id: personId, followerCount: { $gt: 0 } }, { $inc: { followerCount: -1 } }),
-      User.updateOne({ _id: me, followingCount: { $gt: 0 } }, { $inc: { followingCount: -1 } }),
-      unnotify({ userId: personId, actorId: me, kind: "follow", momentId: null }),
-    ]);
-  }
+  await dropFollow(me, personId);
   const person = await personFor(me, personId);
   return person ? { ok: true, value: person } : fail("Not found", 404);
+}
+
+/** Ends one follow, with the counts and the notification it made. A block ends both ways. */
+export async function dropFollow(followerId: string | Types.ObjectId, followeeId: string | Types.ObjectId): Promise<void> {
+  const { deletedCount } = await Follow.deleteOne({ followerId, followeeId });
+  if (deletedCount !== 1) return;
+  await Promise.all([
+    // Shared threads are for people who follow each other.
+    blockShared(followerId, followeeId),
+    User.updateOne({ _id: followeeId, followerCount: { $gt: 0 } }, { $inc: { followerCount: -1 } }),
+    User.updateOne({ _id: followerId, followingCount: { $gt: 0 } }, { $inc: { followingCount: -1 } }),
+    unnotify({ userId: followeeId, actorId: followerId, kind: "follow", momentId: null }),
+  ]);
 }
 
 /** Puts someone they follow in their people, or takes them out. Only people they follow can be in it. */

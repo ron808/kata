@@ -90,7 +90,14 @@ export function askWhen(said: string, ctx: Ctx): { at: Date | null; rest: string
 
   // A clock time, on the day said or the next one it can mean.
   const clock = timeIn(rest, { day: day ?? ctx.day, now: ctx.now, tz: ctx.tz });
-  if (clock.at) return { at: day ? clock.at : later(clock.at), rest: clock.rest };
+  if (clock.at && day) return { at: clock.at, rest: clock.rest };
+  // A time already gone by more than an hour, with no day said, is its next one: "at 9am" said
+  // at two in the afternoon is tomorrow morning. Just missed, it's half an hour from now.
+  if (clock.at && ctx.now.getTime() - clock.at.getTime() > 3_600_000) {
+    const next = timeIn(rest, { day: addDays(ctx.day, 1), now: ctx.now, tz: ctx.tz });
+    if (next.at && next.at > ctx.now) return { at: next.at, rest: next.rest };
+  }
+  if (clock.at) return { at: later(clock.at), rest: clock.rest };
   if (!day) return { at: null, rest };
   const hour = part ? PARTS[part] : 9;
   // Past midnight belongs to the next date: the day turns at four.

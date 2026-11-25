@@ -14,7 +14,7 @@ import { useToast } from "@/components/shared/Toast";
 /**
  * Start fresh and Delete account, at the end of Settings. Each asks a few questions first, in a modal dialog,
  * and neither happens without the password. Start fresh clears what they pick and keeps the account; deleting
- * offers start fresh instead, then a copy of their pages, then says exactly what goes.
+ * offers start fresh instead, then a copy of what they made, then says exactly what goes.
  *
  *   <StartOver counts={await accountCounts(id)} companion={name} />
  */
@@ -34,8 +34,11 @@ export function StartOver({ counts, companion }: { counts: AccountCounts; compan
   useEffect(() => {
     const d = dialog.current;
     if (!d) return;
-    if (flow && !d.open) d.showModal();
-    else if (!flow && d.open) d.close();
+    if (flow && !d.open) {
+      d.showModal();
+      // Opening a dialog focuses its first control; the question's heading is what should be heard first.
+      d.querySelector<HTMLElement>("#start-over-title")?.focus();
+    } else if (!flow && d.open) d.close();
   }, [flow]);
 
   // The page behind stays put while the questions are up.
@@ -298,25 +301,25 @@ function Sheet({
       );
       break;
     case "copy":
-      title = "Do you want a copy of your pages?";
-      body = counts.pages ? (
+      title = "Do you want a copy of what you’ve made?";
+      body = counts.pages + counts.threads + counts.lists + counts.memories + counts.letters + counts.posts + counts.replies + counts.conversations ? (
         <>
           <p className="text-ink/75">
-            One file with every page you’ve written, what {companion} kept track of and what it remembered. Once the account is gone, it can’t be got
-            back.
+            One file with your pages, what {companion} kept track of (with its notes and numbers) and what it remembered, your lists, letters, posts and
+            replies, and the messages you sent. Once the account is gone, it can’t be got back.
           </p>
           <a href="/api/account/export" download onClick={() => setCopied(true)} className={`${buttonClass({ variant: "secondary" })} mt-4`}>
             <Icon name="arrow-down" className="h-4 w-4" />
-            Download my pages
+            Download a copy
           </a>
           {copied ? (
             <p role="status" className="mt-3 text-sm text-ink/70">
-              Downloading {plural(counts.pages, "page")}.
+              Downloading.
             </p>
           ) : null}
         </>
       ) : (
-        <p className="text-ink/75">You haven’t written any pages, so there’s nothing to download.</p>
+        <p className="text-ink/75">You haven’t made anything yet, so there’s nothing to download.</p>
       );
       actions = <Button onClick={next}>Next</Button>;
       break;
@@ -340,11 +343,11 @@ function Sheet({
               </>
             )}
           </ul>
-          {flow === "fresh" && parts.includes("pages") && counts.pages ? (
+          {flow === "fresh" && parts.length ? (
             <p className="mt-3 text-sm text-ink/70">
               Want a copy first?{" "}
               <a href="/api/account/export" download className="link">
-                Download your pages
+                Download a copy
               </a>
               .
             </p>

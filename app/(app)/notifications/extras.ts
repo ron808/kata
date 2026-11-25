@@ -4,6 +4,7 @@ import { User } from "@/lib/db/models/User";
 import { objectId } from "@/lib/social/db";
 import { PERSON_FIELDS, peopleFor } from "@/lib/social/dto";
 import type { NotificationT, PersonT } from "@/lib/types";
+import { byHandles } from "@/lib/social/handles";
 
 export interface NotificationExtras {
   /** Whoever followed you, as people, so the row can offer Follow back. By handle. */
@@ -20,7 +21,7 @@ export async function notificationExtras(viewerId: string, items: NotificationT[
   if (!handles.length) return { people: {}, replies: {} };
 
   await connectDB();
-  const users = await User.find({ handle: { $in: handles } }).select(PERSON_FIELDS).lean();
+  const users = await User.find(byHandles(handles)).select(PERSON_FIELDS).lean();
   const idOf = new Map(users.map((u) => [u.handle, u._id]));
   const followers = new Set(follows.map((n) => n.actor.handle));
   const pairs = replies.flatMap((n) => {

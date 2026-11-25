@@ -3,22 +3,74 @@
 /**
  * ProfileHeader — the top of /u/[handle]: a big avatar sticker in their hue, name, @handle,
  * role, bio, follower and following counts, and Follow, the star that puts them in your people,
- * and Message once you follow each other (or Edit and Share on your own).
- * Props: person: PersonT; unlisted? (your own profile only shows up for its whole handle).
+ * and Message once you follow each other (or Edit and Share on your own), and Block, pressed twice.
+ * Props: person: PersonT; blocked? (you blocked them); unlisted? (your own profile only shows up for its whole handle).
  */
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Avatar } from "@/components/shared/Avatar";
 import { buttonClass } from "@/components/shared/Button";
 import { Icon } from "@/components/shared/Icon";
+import { useToast } from "@/components/shared/Toast";
 import type { PersonT } from "@/lib/types";
 import { FollowButton } from "./FollowButton";
 import { hue8 } from "./labels";
 import { ShareProfile } from "./ShareProfile";
 import { YourPeopleStar } from "./YourPeople";
 
-export function ProfileHeader({ person, unlisted = false }: { person: PersonT; unlisted?: boolean }) {
+/**
+ * Block, pressed twice, or Unblock. A block cuts everything between you (posts, replies,
+ * follows, messages, notifications), so it's here for anyone, not only people you write to.
+ */
+function BlockButton({ person, blocked: initial }: { person: PersonT; blocked: boolean }) {
+  const router = useRouter();
+  const { toast } = useToast();
+  const [blocked, setBlocked] = useState(initial);
+  const [arming, setArming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const first = person.name.trim().split(/\s+/)[0] || person.name;
+
+  async function press() {
+    if (!blocked && !arming) {
+      setArming(true);
+      return;
+    }
+    setArming(false);
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/messages/${person.handle}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ blocked: !blocked }),
+      });
+      if (!res.ok) throw new Error();
+      toast(blocked ? "Unblocked. Follow each other again to write." : `Blocked. ${first} can’t reach you, and you don’t follow each other now.`);
+      setBlocked(!blocked);
+      router.refresh();
+    } catch {
+      toast("That didn’t change. Try again.", "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={press}
+      onBlur={() => setArming(false)}
+      disabled={busy}
+      aria-label={blocked ? `Unblock ${person.name}` : arming ? `Press again to block ${person.name}` : `Block ${person.name}`}
+      className={buttonClass({ variant: arming ? "danger" : "quiet" })}
+    >
+      {blocked ? "Unblock" : arming ? "Press again to block" : "Block"}
+    </button>
+  );
+}
+
+export function ProfileHeader({ person, blocked = false, unlisted = false }: { person: PersonT; blocked?: boolean; unlisted?: boolean }) {
   const [p, setP] = useState(person);
   const [prev, setPrev] = useState(person);
   if (person !== prev) {
@@ -63,14 +115,15 @@ export function ProfileHeader({ person, unlisted = false }: { person: PersonT; u
               </div>
             ) : (
               <div className="flex flex-wrap items-center gap-2.5">
-                <FollowButton person={p} onChange={setP} />
-                <YourPeopleStar person={p} onChange={setP} />
-                {friends ? (
+                {blocked ? null : <FollowButton person={p} onChange={setP} />}
+                {blocked ? null : <YourPeopleStar person={p} onChange={setP} />}
+                {friends && !blocked ? (
                   <Link href={`/messages/${p.handle}`} className={buttonClass({ variant: "secondary" })}>
                     <Icon name="chat" className="h-4 w-4" />
                     Message
                   </Link>
                 ) : null}
+                <BlockButton person={p} blocked={blocked} />
               </div>
             )}
           </div>

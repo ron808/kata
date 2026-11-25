@@ -48,6 +48,9 @@ export async function connectDB() {
       socketTimeoutMS: 45_000,
       // Skip auto-discovery on every cold start; we only have one connection.
       maxIdleTimeMS: 30_000,
+      // Previews share the live database: code that isn't live yet mustn't build or create
+      // anything in it (repairIndexes skips previews for the same reason).
+      ...(process.env.VERCEL_ENV === "preview" ? { autoIndex: false, autoCreate: false } : {}),
     });
   }
   try {

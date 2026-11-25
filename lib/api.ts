@@ -22,6 +22,8 @@ export function handleError(err: unknown) {
     return jsonError("Invalid request", 400, err.flatten());
   }
   if (err instanceof Error) {
+    // An id that isn't one (a mistyped or made-up link) finds nothing: it isn't a server fault.
+    if (err.name === "CastError" || err.name === "BSONError") return jsonError("Not found", 404);
     if (err.message.includes("MONGODB_URI")) {
       return jsonError(
         "Database not configured. Set MONGODB_URI in your .env.local.",

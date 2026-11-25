@@ -7,8 +7,8 @@ export async function GET(request: Request) {
   try {
     await connectDB();
     const url = new URL(request.url);
-    const page = Math.max(1, Number(url.searchParams.get("page") ?? 1));
-    const limit = Math.min(48, Math.max(1, Number(url.searchParams.get("limit") ?? 24)));
+    const page = Math.min(1000, Math.max(1, Math.floor(Number(url.searchParams.get("page")) || 1)));
+    const limit = Math.min(48, Math.max(1, Math.floor(Number(url.searchParams.get("limit")) || 24)));
 
     const filter = { isPublished: true };
     const total = await Template.countDocuments(filter);
@@ -16,6 +16,8 @@ export async function GET(request: Request) {
       .sort({ cloneCount: -1, updatedAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
+      // Only what the list shows: a layout's questions and their settings stay in the database.
+      .select("name description tags cloneCount publishedSlug fields.id")
       .lean();
 
     return NextResponse.json({

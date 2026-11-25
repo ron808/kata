@@ -74,9 +74,10 @@ export function screenLines(items: ScreenItem[], here?: string | null): string {
     .join("\n");
 }
 
-// Words that point at what's on screen: "this one", "the one I'm on", "reply to that".
+// Words that point at what's on screen: "this one", "the one I'm on", "reply to that". Not a bare
+// "this" or "see": "walked 30 minutes this morning" is about them, and the posts stay out of it.
 const POINTS =
-  /\b(?:this|these|those|that one|the one|which one|i'?m on|i am on|on (?:my |the )?screen|right now|looking at|see|posts?|comments?|repl(?:y|ies)|respond|write back|what do you think|thoughts on)\b/i;
+  /\b(?:(?:this|that|these|those) (?:one|post|moment|question)s?|the one|which one|i'?m on|i am on|on (?:my |the )?screen|looking at|posts?|comments?|repl(?:y|ies)|respond|write back|what do you think|thoughts on)\b/i;
 
 /**
  * Whether the posts in view belong in this turn, since each costs tokens: the words point at

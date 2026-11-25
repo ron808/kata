@@ -39,6 +39,10 @@ export interface ExtractOptions {
   today?: string;
   /** False: heuristics only, even with a model configured. */
   useAi?: boolean;
+  /** The writer it’s for: the model call counts against their day (lib/ai/budget.ts). */
+  by?: string;
+  /** Typed one to a box on purpose (setup): "Work" or "Sleep" is a thread, not too vague to keep. */
+  named?: boolean;
 }
 
 export interface PageField {
@@ -74,7 +78,8 @@ const FAMILY_RE = new RegExp(`^(?:${FAMILY})$`, "i");
 
 const EVENT_W =
   /\b(?:interview(?!\s+(?:prep|practice|questions))|birthday|wedding|appointment|exam|exams|finals|deadline|flight|trip|party|anniversary|conference|presentation|demo day|launch day|dinner with|lunch with|call with|recital|concert|graduation|move-in)\b/i;
-const HABIT_W = /^(?:gym|running|yoga|meditation|journaling|stretching|walking|cycling|swimming|flossing|lifting|workouts?)$|\b(?:every day|daily|each day|\d+x a week|times a week)\b/i;
+const HABIT_W =
+  /^(?:gym|running|yoga|meditation|journaling|stretching|walking|cycling|swimming|flossing|lifting|workouts?)$|\b(?:every ?day|daily|nightly|each (?:day|morning|evening|night)|every (?:morning|evening|night|weekday|other day|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|twice a (?:day|week)|once a week|before bed|\d+x a week|\d+x\/week|(?:times|days) a week)\b/i;
 const LEARN_W =
   /^(?:learning|studying|practicing|practising)\b|\b(?:course|class|lessons?|spanish|french|german|japanese|mandarin|italian|portuguese|korean|arabic|hindi|guitar|piano|violin|drums|chess|calculus|algebra|statistics|physics|chemistry|biology|gre|gmat|lsat|mcat|ielts|toefl)\b/i;
 const HEALTH_W =
@@ -128,7 +133,7 @@ function takePhrase(tail: string, keepFrom = false): string {
 }
 
 /** A thread title, or null when the phrase is too vague, too long or not a thing. */
-function cleanTitle(phrase: string): string | null {
+function cleanTitle(phrase: string, named = false): string | null {
   let s = phrase.trim().replace(/^["'*_]+|["'*_]+$/g, "");
   s = s.replace(/^(?:the|a|an|this|that|these|those|some|our|his|her|their|your)\s+/i, "");
   s = s.replace(new RegExp(`^my\\s+(?!(?:${FAMILY}|friend)\\b)`, "i"), "");
@@ -136,7 +141,7 @@ function cleanTitle(phrase: string): string | null {
   s = trimEnd(s);
   if (s.length < 2 || s.length > 60) return null;
   if (s.split(/\s+/).length > 6) return null;
-  if (VAGUE.has(s.toLowerCase()) || BAD_START.test(s) || isClause(s) || /^\d+$/.test(s)) return null;
+  if ((!named && VAGUE.has(s.toLowerCase())) || BAD_START.test(s) || isClause(s) || /^\d+$/.test(s)) return null;
   return capFirst(s);
 }
 
@@ -704,7 +709,7 @@ async function groqThreads(text: string, opts: ExtractOptions): Promise<ThreadCa
           { role: "user", content: text.slice(0, 6000) },
         ],
       },
-      { timeout: 6000 }
+      { timeout: 6000, by: opts.by }
     );
     const raw = completion.choices[0]?.message?.content;
     if (!raw) return null;
@@ -828,11 +833,12 @@ export function candidatesFromItems(items: string[], opts: ExtractOptions = {}):
       out.push(...found);
       continue;
     }
-    const title = cleanTitle(takePhrase(item, true));
+    const title = cleanTitle(takePhrase(item, true), opts.named);
     if (!title) continue;
     const k = resolveKnown(title, [], opts.known ?? []);
     const day = parseDay(item, opts.today);
-    const kind = k?.kind ?? (day && VISIT.test(title) ? "event" : guessKind(title));
+    // How often is often in the words past the title ("Walk every morning", "Stretch before bed").
+    const kind = k?.kind ?? (day && VISIT.test(title) ? "event" : HABIT_W.test(item) ? "habit" : guessKind(title));
     out.push(
       candidate({
         title: k?.title ?? title,

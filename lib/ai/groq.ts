@@ -1,5 +1,6 @@
 import Groq from "groq-sdk";
 import type { ChatCompletion, ChatCompletionCreateParamsNonStreaming } from "groq-sdk/resources/chat/completions";
+import { OverBudget, spendModelCall } from "./budget";
 
 const apiKey = process.env.GROQ_API_KEY;
 
@@ -63,8 +64,10 @@ function retryAfter(err: unknown): number | null {
  */
 export async function complete(
   params: Omit<ChatCompletionCreateParamsNonStreaming, "model">,
-  { models = FAST_MODELS, timeout = 8000, wait = 0 }: { models?: string[]; timeout?: number; wait?: number } = {}
+  { models = FAST_MODELS, timeout = 8000, wait = 0, by }: { models?: string[]; timeout?: number; wait?: number; by?: string } = {}
 ): Promise<ChatCompletion> {
+  // A call a writer started counts against their day (lib/ai/budget.ts).
+  if (by && !(await spendModelCall(by))) throw new OverBudget();
   let last: unknown = new Error("No Groq model to try");
   let soonest: number | null = null;
   for (const model of models) {

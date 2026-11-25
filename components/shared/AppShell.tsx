@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import { signOut } from "next-auth/react";
 import { useEffect, useRef, useState } from "react";
 import { FocusBar } from "@/components/focus/FocusBar";
@@ -45,6 +44,9 @@ const NAV: { href: string; label: string; icon: IconName }[] = [
   { href: "/templates", label: "Gallery", icon: "gallery" },
 ];
 
+/** Pages worth fetching ahead (the tab bar's): each prefetch runs the app's frame on the server, so the rest wait for a tap. */
+const PREFETCHED = new Set(["/dashboard", "/people", "/messages", "/threads", "/history"]);
+
 function isActive(pathname: string, href: string) {
   if (href === "/digest/weekly") return pathname.startsWith("/digest");
   if (href === "/dashboard") return pathname === href;
@@ -67,13 +69,14 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { notifications: unreadNow, messages } = usePulse({ notifications: unread, messages: messagesAtLoad }, pathname);
   // Focus modes bring their own bottom bar, so the tab bar steps aside.
   const writing = pathname.startsWith("/entry/new");
   const focused = writing || pathname === "/settings/template";
   // The companion's colour: on the shell for the first paint, on <html> for dialogs and toasts outside it.
   const maru = user.names.hue ?? undefined;
   const { on: inFocus, theme } = useFocusMode(user);
+  // In focus nothing pops up over the list: the bell and the inbox still count.
+  const { notifications: unreadNow, messages } = usePulse({ notifications: unread, messages: messagesAtLoad }, pathname, inFocus);
   // Today follows the writer: someone who travels shouldn't stay on the day they left behind.
   useEffect(() => {
     const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -142,6 +145,7 @@ export function AppShell({
                   <li key={item.href}>
                     <Link
                       href={item.href}
+                      prefetch={PREFETCHED.has(item.href) ? undefined : false}
                       aria-current={active ? "page" : undefined}
                       className={`flex h-11 items-center gap-3 rounded-full px-3.5 text-[0.9375rem] font-medium transition-colors duration-300 ${
                         active
@@ -191,15 +195,11 @@ export function AppShell({
         </header>
 
         <main id="main" className={`min-w-0 ${focused ? "" : "max-lg:pb-[calc(5rem+env(safe-area-inset-bottom))]"}`}>
-          {/* Opacity only: a transform here would trap the fixed save bar on today's page. */}
-          <motion.div
-            key={pathname}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-          >
+          {/* Opacity only: a transform here would trap the fixed save bar on today's page. A CSS fade,
+              so the page shows from its first paint, not once the scripts have loaded. */}
+          <div key={pathname} className="page-in">
             {children}
-          </motion.div>
+          </div>
         </main>
 
         <AskMaru pathname={pathname} nextAskAt={user.nextAskAt} />
@@ -304,7 +304,10 @@ type Pulse = Counts & { newestAt: string | null; checkedAt: string; latest: { te
  * the notifications page takes it in, as a shared thread's page takes in its own. The same check is
  * how friends see they're here.
  */
-function usePulse(atLoad: Counts, pathname: string): Counts {
+/** A visible tab nobody has touched for this long stops checking until someone does. */
+const ASLEEP_AFTER = 30 * 60_000;
+
+function usePulse(atLoad: Counts, pathname: string, quiet = false): Counts {
   const router = useRouter();
   const { toast } = useToast();
   const [counts, setCounts] = useState(atLoad);
@@ -315,6 +318,10 @@ function usePulse(atLoad: Counts, pathname: string): Counts {
   }
   const known = useRef(atLoad);
   const page = useRef(pathname);
+  const hushed = useRef(quiet);
+  useEffect(() => {
+    hushed.current = quiet;
+  }, [quiet]);
   // The newest notification the shell has heard about (server time), so only newer ones toast.
   const since = useRef<string | null>(null);
   const lastInput = useRef(0);
@@ -348,19 +355,24 @@ function usePulse(atLoad: Counts, pathname: string): Counts {
         const reading = page.current === "/notifications";
         // News about the shared thread they're looking at refreshes it instead of toasting.
         const here = Boolean(data.latest?.href) && data.latest?.href === page.current;
-        if (data.latest && !reading && !here) toast(data.latest.text);
+        if (data.latest && !reading && !here && !hushed.current) toast(data.latest.text);
         if ((reading && data.notifications > before.notifications) || here) router.refresh();
         since.current = data.newestAt ?? since.current ?? data.checkedAt;
       }
-      const quiet = Date.now() - lastInput.current > 2 * 60_000;
-      timer = window.setTimeout(tick, quiet ? 30_000 : 10_000);
+      const quietFor = Date.now() - lastInput.current;
+      // Left open and untouched for half an hour, nobody is here: it stops (and so does "Active now")
+      // until the next touch, focus or look.
+      if (quietFor > ASLEEP_AFTER) return;
+      timer = window.setTimeout(tick, quietFor > 2 * 60_000 ? 30_000 : 10_000);
     };
     // Coming back to the tab fires focus and visibilitychange together: one check does for both.
     const wake = () => {
       if (Date.now() - lastCheck.current > 1500) void tick();
     };
     const stir = () => {
+      const asleep = Date.now() - lastInput.current > ASLEEP_AFTER;
       lastInput.current = Date.now();
+      if (asleep) void tick();
     };
     const inputs = ["pointerdown", "keydown", "wheel", "touchstart"] as const;
     document.addEventListener("visibilitychange", wake);

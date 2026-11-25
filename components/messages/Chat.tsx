@@ -16,9 +16,16 @@ import { Sticker } from "./Sticker";
 const MAX = 2000;
 /** Sent when a conversation changes here, so the list beside it catches up. */
 export const CHANGED_EVENT = "kata:messages";
-// New messages are fetched this often while the conversation is on screen: sooner while they're around.
-const POLL_NEAR = 2000;
-const POLL_AWAY = 5000;
+// New messages are fetched while the conversation is on screen and visible: every 2 seconds while
+// they're typing or a message came in the last minute, every 5 while they're here, every 15 when
+// they aren't, and every 30 once nobody here has touched the page for two minutes.
+const POLL_LIVELY = 2000;
+const POLL_NEAR = 5000;
+const POLL_AWAY = 15_000;
+const POLL_IDLE = 30_000;
+const LIVELY_FOR = 60_000;
+const OVERLAP_MS = 30_000;
+const IDLE_AFTER = 120_000;
 /** Typing pings go at most this often while someone types. */
 const TYPING_EVERY = 3000;
 
@@ -89,10 +96,12 @@ export function Chat({ initial, draft = "", tz }: { initial: ThreadOpenT; draft?
   const pinned = useRef(true);
   const keepFrom = useRef<number | null>(null);
   const latest = useRef<string | null>(null);
+  const known = useRef<Set<string>>(new Set());
   const near = useRef(initial.typing);
   const typedAt = useRef(0);
   useEffect(() => {
     latest.current = [...messages].reverse().find((m) => !m._id.startsWith("pending-"))?.createdAt ?? null;
+    known.current = new Set(messages.map((m) => m._id));
   }, [messages]);
 
   useLayoutEffect(() => {
@@ -111,19 +120,44 @@ export function Chat({ initial, draft = "", tz }: { initial: ThreadOpenT; draft?
     let live = true;
     let timer = 0;
     let busy = false;
+    let heard = 0;
+    let touched = Date.now();
+    let theyType = false;
+    // Closed (a block, or not following each other), nothing new can arrive but a change of that.
+    let shut = Boolean(initial.closed);
+    const delay = () => {
+      const now = Date.now();
+      if (shut || now - touched > IDLE_AFTER) return POLL_IDLE;
+      if (theyType || now - heard < LIVELY_FOR) return POLL_LIVELY;
+      return near.current ? POLL_NEAR : POLL_AWAY;
+    };
+    const touch = () => {
+      const was = Date.now() - touched > IDLE_AFTER;
+      touched = Date.now();
+      // Back from idle: look now rather than at the end of a long wait.
+      if (was) void tick();
+    };
     const tick = async () => {
       window.clearTimeout(timer);
       if (busy) return;
       if (document.visibilityState === "visible") {
         busy = true;
-        const after = latest.current;
+        // Looks back a little past the newest message here: one sent from the other side a moment
+        // before ours (stamped earlier, saved later) is still fetched. Repeats are merged by id.
+        const after = latest.current ? new Date(Date.parse(latest.current) - OVERLAP_MS).toISOString() : null;
         const res = await fetch(`/api/messages/${person.handle}${after ? `?after=${encodeURIComponent(after)}` : ""}`, { cache: "no-store" }).catch(() => null);
         busy = false;
         if (!live) return;
         if (res?.ok) {
           const data = (await res.json()) as ThreadOpenT;
           if (!live) return;
-          if (data.messages.length) setMessages((ms) => merge(ms, data.messages));
+          const fresh = data.messages.filter((m) => !known.current.has(m._id));
+          if (fresh.length) {
+            setMessages((ms) => merge(ms, fresh));
+            if (fresh.some((m) => !m.mine)) heard = Date.now();
+          }
+          theyType = data.typing;
+          shut = Boolean(data.closed);
           setClosed(data.closed);
           setBlocked(data.blocked);
           setLink({ isFollowing: data.isFollowing, followsYou: data.followsYou });
@@ -133,20 +167,25 @@ export function Chat({ initial, draft = "", tz }: { initial: ThreadOpenT; draft?
           near.current = data.typing || isActiveNow(data.active);
         }
       }
-      if (live) timer = window.setTimeout(tick, near.current ? POLL_NEAR : POLL_AWAY);
+      // A hidden tab waits: coming back looks at once (wake).
+      if (live && document.visibilityState === "visible") timer = window.setTimeout(tick, delay());
     };
     const wake = () => {
       if (document.visibilityState === "visible") void tick();
     };
     near.current = near.current || isActiveNow(initial.active);
-    timer = window.setTimeout(tick, near.current ? POLL_NEAR : POLL_AWAY);
+    timer = window.setTimeout(tick, near.current ? POLL_LIVELY : POLL_AWAY);
     document.addEventListener("visibilitychange", wake);
+    window.addEventListener("pointerdown", touch, { passive: true });
+    window.addEventListener("keydown", touch);
     return () => {
       live = false;
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("pointerdown", touch);
+      window.removeEventListener("keydown", touch);
     };
-  }, [person.handle, initial.active]);
+  }, [person.handle, initial.active, initial.closed]);
 
   /** Tells the other side they're typing (every few seconds at most), or that they stopped. */
   function ping(on: boolean) {
@@ -276,9 +315,9 @@ export function Chat({ initial, draft = "", tz }: { initial: ThreadOpenT; draft?
       });
       if (!res.ok) throw new Error();
       setBlocked(next);
-      setClosed(next ? `You blocked ${first}. Unblock them to write.` : null);
+      setClosed(next ? `You blocked ${first}. Unblock them to write.` : `People who follow each other can write. Follow ${first}, and once they follow back you can.`);
       window.dispatchEvent(new Event(CHANGED_EVENT));
-      toast(next ? `${first} can’t message you now.` : `${first} can message you again.`);
+      toast(next ? `Blocked. ${first} can’t reach you, and you don’t follow each other now.` : `Unblocked. Follow each other again to write.`);
     } catch {
       toast("That didn’t change. Try again.", "danger");
     }

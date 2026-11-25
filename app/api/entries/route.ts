@@ -80,7 +80,7 @@ export async function POST(request: Request) {
     }
 
     // Kata reads the page after the response is sent; a failure there never fails the save.
-    const page = { _id: saved._id, fields: data.fields };
+    const page = { _id: saved._id, fields: saved.fields };
     const userId = session.user.id;
     after(async () => {
       try {

@@ -10,7 +10,7 @@ import {
 import { recordStep, type Stepped } from "@/lib/social/threadSteps";
 import type { ThreadT } from "@/lib/types";
 import type { KnownThread, ThreadCandidate } from "./extract";
-import { FIELDS_MAX, fieldKey, habitGap, type FieldSpec } from "./fields";
+import { FIELDS_MAX, fieldKey, habitGap, withHowOften, type FieldSpec } from "./fields";
 import { isDuplicateKey } from "./messages";
 import { addDays, dateToDay, dayDiff, localDay } from "./time";
 
@@ -385,7 +385,8 @@ export async function applyCandidates(
       const created = await createThread(
         ctx,
         {
-          title: c.title,
+          // "Gym 3x a week" keeps how often it's meant, or rest days would read as missed ones.
+          title: isHabit ? withHowOften(c.title, c.snippet || c.title) : c.title,
           kind: c.kind,
           status: isHabit ? "moving" : (c.status ?? "moving"),
           tags: c.tags,

@@ -57,7 +57,6 @@ import {
 } from "./threads";
 import { stepSaid, stepsFor } from "./steps";
 import { addDays, dateToDay, dayToDate, localDay, validTimeZone, weekdayOf } from "./time";
-import { voiceCheckin } from "./voice";
 
 /**
  * Kata's side of the conversation. ensureToday writes the day's opening (and
@@ -155,14 +154,15 @@ async function greetingFacts(ctx: EngineCtx): Promise<GreetingFacts> {
   };
 }
 
-async function checkinDraft(line: Line, thread: IThread, ctx: Ctx): Promise<Draft> {
+// The wording is code's own: no model call on the day's first visit, so it opens at once and costs nothing.
+function checkinDraft(line: Line, thread: IThread): Draft {
   // A thread that keeps numbers can be logged right from its check-in, with no model. A habit's
   // answer is Done, and the numbers come after it: one question, one control.
   const log = thread.kind === "habit" ? null : logChoice(thread);
   return {
     from: "kata",
     kind: "checkin",
-    text: await voiceCheckin(line.text, thread, liveStreak(thread, ctx)),
+    text: line.text,
     threadId: thread._id,
     replies: line.replies,
     choices: log ? [log] : [],
@@ -170,7 +170,7 @@ async function checkinDraft(line: Line, thread: IThread, ctx: Ctx): Promise<Draf
 }
 
 function plannedDrafts(planned: Planned[], ctx: EngineCtx): Promise<Draft[]> {
-  return Promise.all(planned.map((p) => checkinDraft(checkinLine(p, ctx, seedFor(ctx, String(p.thread._id)), isEvening(ctx.hour)), p.thread, ctx)));
+  return Promise.resolve(planned.map((p) => checkinDraft(checkinLine(p, ctx, seedFor(ctx, String(p.thread._id)), isEvening(ctx.hour)), p.thread)));
 }
 
 /** Writes a set of messages; if another request already wrote it (same stable _id), writes nothing. */
@@ -259,13 +259,13 @@ async function eveningCheckins(ctx: EngineCtx, messages: ICompanionMessage[]): P
     const order = (m: ICompanionMessage) => (m.answer === "stuck" || m.answer === "waiting" ? 0 : m.answer === null ? 1 : 2);
     const m = [...morning].sort((a, b) => order(a) - order(b))[0];
     const t = byId.get(String(m.threadId)) as IThread;
-    return [await checkinDraft(eveningLine(t, m.answer, ctx, seed), t, ctx)];
+    return [checkinDraft(eveningLine(t, m.answer, ctx, seed), t)];
   }
   // No check-ins this morning: evening people get theirs now, or Kata follows up on what came up today.
   const planned = chooseCheckins(threads, ctx, await historyFor(ctx));
   if (planned.length) return plannedDrafts(planned, ctx);
   const cameUp = threads.find((t) => t.kind !== "habit" && localDay(ctx.tz, new Date(t.updatedAt)) === ctx.day);
-  return cameUp ? [await checkinDraft(eveningLine(cameUp, undefined, ctx, seed), cameUp, ctx)] : [];
+  return cameUp ? [checkinDraft(eveningLine(cameUp, undefined, ctx, seed), cameUp)] : [];
 }
 
 export interface Today {
@@ -453,13 +453,19 @@ export async function answer(userId: string, messageId: string, value: string): 
     if (settled) throw new CompanionError(settled, 409);
   }
   await claim(ctx, msg, value);
-  // Something they asked to be asked about: settled, or kept for later (lib/companion/asks.ts).
-  if (value.startsWith("ask:")) {
-    const settled = await answerAsk(ctx, value, chosen.label);
-    const created = await insertDrafts(ctx.userId, ctx.day, [{ from: "you", kind: "reply", text: settled.you }, settled.kata]);
-    return { ctx, created: [...today.created, ...created], actions: [{ type: "asks", next: settled.next?.toISOString() ?? null }] };
+  try {
+    // Something they asked to be asked about: settled, or kept for later (lib/companion/asks.ts).
+    if (value.startsWith("ask:")) {
+      const settled = await answerAsk(ctx, value, chosen.label);
+      const created = await insertDrafts(ctx.userId, ctx.day, [{ from: "you", kind: "reply", text: settled.you }, settled.kata]);
+      return { ctx, created: [...today.created, ...created], actions: [{ type: "asks", next: settled.next?.toISOString() ?? null }] };
+    }
+    return { ctx, created: [...today.created, ...(await respond(ctx, msg, chosen, chosen.label))] };
+  } catch (err) {
+    // A tap that failed part way leaves its question open to try again, not used up.
+    await CompanionMessage.updateOne({ _id: msg._id, answer: value }, { $set: { answer: null } }).catch(() => undefined);
+    throw err;
   }
-  return { ctx, created: [...today.created, ...(await respond(ctx, msg, chosen, chosen.label))] };
 }
 
 const NOT_NOW: IQuickReply = { label: "Not now", value: "later" };
@@ -659,7 +665,7 @@ async function general(ctx: EngineCtx, messages: ICompanionMessage[], text: stri
     return { from: "kata", kind: "reply", text: asksState ? fact : ack.noAnswer(fact), threadId: t._id };
   }
 
-  const applied = await applyCandidates(ctx, await threadsFromText(text, { known, today: ctx.day }), {
+  const applied = await applyCandidates(ctx, await threadsFromText(text, { known, today: ctx.day, by: ctx.userId }), {
     from: "you",
     source: "kata",
   });
@@ -797,7 +803,7 @@ export async function say(userId: string, raw: string): Promise<Exchange> {
         out = await insertDrafts(ctx.userId, ctx.day, [{ from: "you", kind: "note", text }, { from: "kata", kind: "reply", text: ack.noted(seedFor(ctx, "noted", "chatter")) }]);
         break;
       }
-      const opts = { known: await knownThreads(ctx.userId), today: ctx.day };
+      const opts = { known: await knownThreads(ctx.userId), today: ctx.day, by: ctx.userId };
       const found = text.split(/\s+/).length <= 25 ? candidatesFromItems(splitList(text), opts) : await threadsFromText(text, opts);
       const applied = await applyCandidates(ctx, found, { from: "you", source: "kata" });
       const seed = seedFor(ctx, "open-answer");

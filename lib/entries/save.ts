@@ -7,6 +7,10 @@ import { toUtcMidnight } from "@/lib/utils/dates";
 import { countWords, streakFromDates } from "@/lib/utils/streaks";
 
 const MAX_WORDS = 5000;
+/** A page's words in characters: 5,000 long words fit, a page padded to fill the database doesn't. */
+const MAX_CHARS = 60_000;
+/** A new page can be about a day this far back at most: a tab left open over a long weekend still saves. */
+const NEW_PAGE_DAYS = 14;
 
 /** A save the writer can fix (a bad date, too many words), with the status to answer with. */
 export class PageError extends Error {
@@ -26,6 +30,8 @@ export interface SavedPage {
   created: boolean;
   /** The fields before this save, for Kata to see what changed. */
   previousFields: EntryField[] | null;
+  /** The whole page as saved: what was sent and what was kept. */
+  fields: EntryField[];
 }
 
 /** Something was written or chosen: an empty answer is no answer. */
@@ -48,17 +54,24 @@ export async function savePage(userId: string, input: { fields: EntryField[]; da
   if (!user.activeTemplateId) throw new PageError("No active template — finish onboarding first.", 400);
 
   const existing = await Entry.findOne({ userId, date });
+  if (!existing && today.getTime() - date.getTime() > NEW_PAGE_DAYS * 86_400_000) {
+    throw new PageError("A new page can only be about the last two weeks.", 400);
+  }
   const previousFields = existing
     ? existing.fields.map((f) => ({ fieldId: f.fieldId, type: f.type, label: f.label, value: f.value }) as EntryField)
     : null;
-  // Answers to questions the page no longer asks (they switched to another page today) stay:
-  // a page only loses what its writer clears. Kata's questions are sent whole, so they don't.
+  // A page only loses what its writer clears. The writing page sends only what it changed, so an
+  // answer saved from another device (or by Maru) since this one loaded stays, and so do answers
+  // to questions the page no longer asks (they switched to another page today). A Kata question
+  // sent empty is cleared, and not kept as an empty answer.
   const sent = new Set(input.fields.map((f) => f.fieldId));
-  const kept = (previousFields ?? []).filter((f) => !sent.has(f.fieldId) && !isKataFieldId(f.fieldId) && answered(f.value));
-  const fields = [...input.fields, ...kept];
+  const kept = (previousFields ?? []).filter((f) => !sent.has(f.fieldId) && answered(f.value));
+  const fields = [...input.fields.filter((f) => !isKataFieldId(f.fieldId) || answered(f.value)), ...kept];
 
   const wordCount = fields.reduce((sum, f) => (typeof f.value === "string" ? sum + countWords(f.value) : sum), 0);
   if (wordCount > MAX_WORDS) throw new PageError(`Entry exceeds ${MAX_WORDS} words.`, 400);
+  const chars = fields.reduce((sum, f) => sum + (typeof f.value === "string" ? f.value.length : 0), 0);
+  if (chars > MAX_CHARS) throw new PageError("That page is too long to save: 60,000 characters at most.", 400);
 
   // An answered Kata question (fieldId kata:<tag>:<questionId>) files the page under its tag.
   const kataTags = fields.flatMap((f) => {
@@ -100,5 +113,5 @@ export async function savePage(userId: string, input: { fields: EntryField[]; da
     await User.findByIdAndUpdate(userId, { $inc: { totalWords: wordCount - previousWordCount } });
   }
 
-  return { _id: String(entry._id), date: entry.date, wordCount: entry.wordCount, tags: entry.tags, created: !existing, previousFields };
+  return { _id: String(entry._id), date: entry.date, wordCount: entry.wordCount, tags: entry.tags, created: !existing, previousFields, fields };
 }

@@ -1,6 +1,11 @@
 import type { IEntry } from "@/lib/db/models/Entry";
 
-function serializeEntries(entries: IEntry[]): string {
+/**
+ * The pages, each cut to its share of `budget` characters (300 at least), so a month of long
+ * pages still fits in one request under the free tier's tokens a minute.
+ */
+function serializeEntries(entries: IEntry[], budget: number): string {
+  const share = Math.max(300, Math.floor(budget / Math.max(1, entries.length)));
   return entries
     .map((e) => {
       const date = new Date(e.date).toISOString().slice(0, 10);
@@ -10,7 +15,7 @@ function serializeEntries(entries: IEntry[]): string {
           return `  ${f.label}: ${v}`;
         })
         .join("\n");
-      return `[${date}]\n${body}`;
+      return `[${date}]\n${body.length > share ? `${body.slice(0, share)}…` : body}`;
     })
     .join("\n\n");
 }
@@ -25,7 +30,7 @@ export function weeklyPrompt(args: {
     user: `Here are the journal entries from the past 7 days for a ${args.role} named ${args.name}.
 Each entry includes date and their responses to their daily prompts.
 
-${serializeEntries(args.entries)}
+${serializeEntries(args.entries, 10_000)}
 
 Write their weekly digest. Start with what you noticed about their week. Then mention one pattern or recurring theme. End with one gentle observation or question for them to reflect on.`,
   };
@@ -45,7 +50,7 @@ Role: ${args.role}
 Month: ${args.month} ${args.year}
 
 Entries:
-${serializeEntries(args.entries)}
+${serializeEntries(args.entries, 16_000)}
 
 Write the monthly letter. Begin with what this month seemed to be about for them. Reference specific things they wrote (without quoting verbatim). End with something forward-looking — what might next month hold based on where they are now.`,
   };

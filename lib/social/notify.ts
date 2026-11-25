@@ -1,6 +1,7 @@
 import type { Types } from "mongoose";
 import type { ReactionKind } from "@/lib/db/models/Moment";
 import { Notification, type NotificationKind } from "@/lib/db/models/Notification";
+import { blockedBetween } from "./visibility";
 
 type Id = Types.ObjectId | string;
 
@@ -24,15 +25,21 @@ export async function notify(
   { reaction = null, fresh = false }: { reaction?: ReactionKind | null; fresh?: boolean } = {}
 ): Promise<void> {
   if (String(key.userId) === String(key.actorId)) return;
+  // Nothing reaches someone from a person either of them has blocked.
+  if (await blockedBetween(String(key.userId), String(key.actorId))) return;
   const surfaced = { read: false, createdAt: new Date() };
   await Notification.updateOne(
     key,
-    fresh ? { $set: { ...surfaced, reaction } } : { $set: { reaction }, $setOnInsert: surfaced },
+    fresh ? { $set: { ...surfaced, reaction, gone: false } } : { $set: { reaction, gone: false }, $setOnInsert: surfaced },
     { upsert: true }
   );
 }
 
+/** What can be flicked on and off: withdrawn, these stay (read and hidden), so flicking back can't notify again. */
+const TOGGLES = new Set<NotificationKind>(["follow", "reaction", "cheer"]);
+
 /** Withdraws a notification once what it announced has been undone. */
 export async function unnotify(key: NotificationKey): Promise<void> {
-  await Notification.deleteOne(key);
+  if (TOGGLES.has(key.kind)) await Notification.updateOne(key, { $set: { read: true, gone: true } });
+  else await Notification.deleteOne(key);
 }

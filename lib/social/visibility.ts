@@ -1,13 +1,32 @@
 import type { QueryFilter, Types } from "mongoose";
+import { Conversation, conversationKey } from "@/lib/db/models/Conversation";
 import { Follow } from "@/lib/db/models/Follow";
 import { Moment, type IMoment } from "@/lib/db/models/Moment";
 import { isObjectId, objectId } from "./db";
 
 /*
- * Who sees a moment: its author, always. Anyone signed in, if it's public. The author's friends
+ * Who sees a moment: its author, always. Never anyone across a block. Anyone signed in, if it's public. The author's friends
  * (people they follow who follow them back), if it's friends-only. `canSeeMoment` checks one
  * moment and `visibleTo` is the same rule as a query clause; every route goes through one of them.
  */
+
+/**
+ * Whether either has blocked the other. A block lives on their conversation, and it cuts
+ * everything between them: posts, replies, reactions, follows, notifications and messages.
+ */
+export async function blockedBetween(a: string, b: string): Promise<boolean> {
+  if (a === b || !isObjectId(a) || !isObjectId(b)) return false;
+  return Boolean(await Conversation.exists({ key: conversationKey(a, b), "blockedBy.0": { $exists: true } }));
+}
+
+/** Of `ids`, the people the viewer has blocked or who blocked the viewer. */
+export async function blockedAmong(viewer: string, ids: Types.ObjectId[]): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  const convos = await Conversation.find({ key: { $in: ids.map((id) => conversationKey(viewer, String(id))) }, "blockedBy.0": { $exists: true } })
+    .select("members")
+    .lean();
+  return new Set(convos.flatMap((c) => c.members.map(String)).filter((id) => id !== viewer));
+}
 
 export async function areFriends(a: string, b: string): Promise<boolean> {
   if (a === b) return false;
@@ -25,7 +44,9 @@ export async function canSeeMoment(
   moment: Pick<IMoment, "userId" | "visibility">
 ): Promise<boolean> {
   const authorId = String(moment.userId);
-  if (moment.visibility === "public" || authorId === viewerId) return true;
+  if (authorId === viewerId) return true;
+  if (await blockedBetween(viewerId, authorId)) return false;
+  if (moment.visibility === "public") return true;
   return areFriends(viewerId, authorId);
 }
 
@@ -92,7 +113,9 @@ export async function relationsTo(
  * People feed and home show these; everyone else is found by name.
  */
 export async function yourPeople(viewerId: string): Promise<{ ids: Types.ObjectId[]; chosen: boolean }> {
-  const follows = await Follow.find({ followerId: viewerId }).select("followeeId close").lean();
+  const all = await Follow.find({ followerId: viewerId }).select("followeeId close").lean();
+  const blocked = await blockedAmong(viewerId, all.map((f) => f.followeeId));
+  const follows = all.filter((f) => !blocked.has(String(f.followeeId)));
   const close = follows.filter((f) => f.close).map((f) => f.followeeId);
   return close.length ? { ids: close, chosen: true } : { ids: follows.map((f) => f.followeeId), chosen: false };
 }

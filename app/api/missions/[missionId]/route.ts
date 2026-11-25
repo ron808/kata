@@ -5,7 +5,7 @@ import { momentOn } from "@/lib/companion/time";
 import { Mission } from "@/lib/db/models/Mission";
 import { User } from "@/lib/db/models/User";
 import { Finished, NoSuchTask, type Change } from "@/lib/missions/apply";
-import { changeMission, endMission, focusOff, focusOn, getMission, keepAsThreads, runAgain, toMissionT } from "@/lib/missions";
+import { changeMission, endMission, focusOff, focusOn, getMission, keepAsThreads, runAgain, toMissionT, listDay } from "@/lib/missions";
 import { endsFrom, parseTasks } from "@/lib/missions/parse";
 import { MissionChangeSchema, type MissionChange } from "@/lib/missions/schemas";
 
@@ -47,7 +47,7 @@ async function changeFrom(ctx: EngineCtx, id: string, data: MissionChange): Prom
       return { do: "ends", endsAt: data.until ? endsFrom(data.until, when) : null };
     }
     case "carry":
-      return { do: "carry", day: ctx.day };
+      return { do: "carry", day: listDay(ctx) };
     case "again":
     case "keep":
       return null;

@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { sessionsChanged } from "@/lib/auth/sessions";
 import { Types } from "mongoose";
 import { Ask } from "@/lib/db/models/Ask";
 import { Breakdown } from "@/lib/db/models/Breakdown";
@@ -164,6 +165,8 @@ export async function deleteAccount(userId: string): Promise<void> {
     PasswordResetToken.deleteMany({ userId: uid }),
   ]);
   await User.deleteOne({ _id: uid });
+  // Any device still signed in to it is signed out (other servers within a minute).
+  sessionsChanged(userId);
 }
 
 /** A field's answer as text: lists one per line, a yes or no in words. */
@@ -183,29 +186,81 @@ function answerText(value: unknown): string {
   return "";
 }
 
-/** Every page they wrote, what they kept track of and what was remembered, as one Markdown file to keep. */
+/** A day as the file reads it: "Tuesday 3 March 2026". */
+const dayText = (d: Date) => formatDate(d, "long", "UTC");
+
+/**
+ * Everything they made, as one Markdown file to keep: pages, what was kept track of (with its
+ * notes, next steps, numbers and habit days), what was remembered, lists, letters, posts and
+ * replies, asks, and their side of their messages (the other person’s words are theirs).
+ */
 export async function exportPages(userId: string, companion: string): Promise<{ filename: string; text: string }> {
   const uid = idOf(userId);
-  const [user, entries, threads] = await Promise.all([
+  const [user, entries, threads, missions, letters, posts, replies, asks, sent] = await Promise.all([
     User.findById(uid).select("name memories").lean(),
     Entry.find({ userId: uid }).sort({ date: 1 }).select("date fields").lean(),
-    Thread.find({ userId: uid }).sort({ createdAt: 1 }).select("title kind status").lean(),
+    Thread.find({ userId: uid }).sort({ createdAt: 1 }).select("title kind status nextStep log fields doneDays").lean(),
+    Mission.find({ userId: uid }).sort({ createdAt: 1 }).select("title day status tasks.title tasks.status").lean(),
+    Digest.find({ userId: uid }).sort({ periodStart: 1 }).select("type periodStart content").lean(),
+    Moment.find({ userId: uid }).sort({ createdAt: 1 }).select("text kind createdAt").lean(),
+    Reply.find({ userId: uid }).sort({ createdAt: 1 }).select("text createdAt").lean(),
+    Ask.find({ userId: uid }).sort({ at: 1 }).select("text at status").lean(),
+    DirectMessage.find({ from: uid }).sort({ createdAt: 1 }).select("conversationId text sticker createdAt").lean(),
   ]);
   const now = new Date();
-  const out = [`# ${user?.name ? `${user.name}’s` : "Your"} pages on Kata`, "",`Downloaded ${formatDate(now, "long", "UTC")}. ${entries.length === 1 ? "1 page" : `${entries.length} pages`}.`];
+  const out = [`# ${user?.name ? `${user.name}’s` : "Your"} Kata`, "", `Downloaded ${dayText(now)}. ${entries.length === 1 ? "1 page" : `${entries.length} pages`}.`];
+  if (entries.length) out.push("", "# Pages");
   for (const e of entries) {
     const answered = e.fields.map((f) => [f.label, answerText(f.value)] as const).filter(([, a]) => a);
     if (!answered.length) continue;
-    out.push("", `## ${formatDate(new Date(e.date), "long", "UTC")}`);
+    out.push("", `## ${dayText(new Date(e.date))}`);
     for (const [label, a] of answered) out.push("", `### ${label}`, "", a);
   }
   if (threads.length) {
-    out.push("", `## What ${companion} kept track of`, "");
-    for (const t of threads) out.push(`- ${t.title} (${t.kind}, ${t.status})`);
+    out.push("", `# What ${companion} kept track of`);
+    for (const t of threads) {
+      out.push("", `## ${t.title}`, "", `${t.kind}, ${t.status}${t.nextStep ? `. Next: ${t.nextStep}` : ""}`);
+      const notes = (t.log ?? []).filter((l) => l.text);
+      if (notes.length) out.push("", ...notes.map((l) => `- ${dayText(new Date(l.at))}: ${l.text.replace(/\n+/g, " ")}`));
+      if (t.doneDays?.length) out.push("", `Done on: ${t.doneDays.join(", ")}`);
+      for (const f of t.fields ?? []) {
+        if (f.days?.length) out.push("", `${f.label}${f.unit ? ` (${f.unit})` : ""}: ${f.days.map((d) => `${d.day} ${d.value}`).join(", ")}`);
+      }
+    }
   }
   if (user?.memories?.length) {
-    out.push("", `## What ${companion} remembered`, "");
+    out.push("", `# What ${companion} remembered`, "");
     for (const m of user.memories) out.push(`- ${m.text}`);
   }
-  return { filename: `kata-pages-${now.toISOString().slice(0, 10)}.md`, text: `${out.join("\n")}\n` };
+  if (missions.length) {
+    out.push("", "# Lists");
+    for (const m of missions) {
+      out.push("", `## ${m.title || `List for ${m.day}`}`, "");
+      for (const t of m.tasks ?? []) out.push(`- [${t.status === "done" ? "x" : " "}] ${t.title}${t.status === "done" || t.status === "todo" ? "" : ` (${t.status})`}`);
+    }
+  }
+  if (letters.length) {
+    out.push("", "# Letters");
+    for (const l of letters) out.push("", `## ${l.type === "weekly" ? "Week" : "Month"} from ${dayText(new Date(l.periodStart))}`, "", l.content);
+  }
+  if (posts.length || replies.length) {
+    out.push("", "# What you shared");
+    for (const m of posts) out.push("", `- ${dayText(new Date(m.createdAt))} (${m.kind}): ${m.text.replace(/\n+/g, " ")}`);
+    for (const r of replies) out.push(`- ${dayText(new Date(r.createdAt))} (a reply): ${r.text.replace(/\n+/g, " ")}`);
+  }
+  if (asks.length) {
+    out.push("", "# Asked to be asked about", "");
+    for (const a of asks) out.push(`- ${a.text}, ${dayText(new Date(a.at))} (${a.status})`);
+  }
+  if (sent.length) {
+    const convos = await Conversation.find({ _id: { $in: [...new Set(sent.map((m) => String(m.conversationId)))] } }).select("members").lean();
+    const others = new Map(convos.map((c) => [String(c._id), c.members.find((m) => String(m) !== String(uid))]));
+    const people = new Map((await User.find({ _id: { $in: [...others.values()].filter((id): id is Types.ObjectId => Boolean(id)) } }).select("name handle").lean()).map((u) => [String(u._id), u.handle ? `@${u.handle}` : u.name]));
+    out.push("", "# Messages you sent", "");
+    for (const m of sent) {
+      const to = people.get(String(others.get(String(m.conversationId)))) ?? "someone";
+      out.push(`- ${dayText(new Date(m.createdAt))}, to ${to}: ${m.sticker ? `[sticker: ${m.sticker}]` : m.text.replace(/\n+/g, " ")}`);
+    }
+  }
+  return { filename: `kata-${now.toISOString().slice(0, 10)}.md`, text: `${out.join("\n")}\n` };
 }

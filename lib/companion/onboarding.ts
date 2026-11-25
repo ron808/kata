@@ -93,7 +93,7 @@ export async function onboard(userId: string, input: OnboardingInput): Promise<O
 
   const tz = validTimeZone(user.timezone);
   const ctx: Ctx = { userId, tz, now, day: localDay(tz, now) };
-  const focus = candidatesFromItems(input.focus, { known: await knownThreads(userId), today: ctx.day });
+  const focus = candidatesFromItems(input.focus, { known: await knownThreads(userId), today: ctx.day, named: true });
   const applied = await applyCandidates(ctx, focus, { from: "you", source: "kata", onlyCreate: true });
 
   // Name exactly what tomorrow's check-ins will pick, so the promise holds.

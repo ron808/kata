@@ -61,7 +61,7 @@ export function Memories({ initial }: { initial: MemoryT[] }) {
         What {name} remembers
       </h2>
       <p className="mt-1.5 text-[0.875rem] text-ink/65">
-        Facts {name} keeps so it never asks twice. Only you see them, and you can delete any.
+        Facts {name} keeps so it never asks twice. No one else on Kata sees them, and you can delete any.
       </p>
       {items.length ? (
         <ul className="mt-4">

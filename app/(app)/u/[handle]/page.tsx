@@ -62,7 +62,7 @@ export default async function ProfilePage({ params }: { params: Params }) {
     );
   }
   if (!data) notFound();
-  const { person, moments, sharedThreads } = data;
+  const { person, moments, sharedThreads, blocked } = data;
   // One address per person: /u/Mira and /u/@mira land on /u/mira.
   if (decodeURIComponent(handle) !== person.handle) permanentRedirect(`/u/${person.handle}`);
 
@@ -72,7 +72,7 @@ export default async function ProfilePage({ params }: { params: Params }) {
   return (
     <PeopleProvider handle={me?.handle ?? null} suggested={me?.suggestedHandle}>
       <AppPage>
-        <ProfileHeader person={person} unlisted={Boolean(person.isMe && me && !me.isPublic)} />
+        <ProfileHeader person={person} blocked={blocked} unlisted={Boolean(person.isMe && me && !me.isPublic)} />
 
         <div className="mt-10 grid grid-cols-1 gap-x-8 gap-y-10 xl:grid-cols-12">
           <section aria-labelledby="moments-heading" className="min-w-0 xl:col-span-7">

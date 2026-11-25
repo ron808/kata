@@ -9,6 +9,7 @@ import type { BreakdownT, BreakdownThread } from "@/lib/types";
 import { BreakdownActions } from "./BreakdownActions";
 import { DRAWN_DAYS, DayBars, DayStrip, Meter } from "./Charts";
 import { Take } from "./Take";
+import { habitGap } from "@/lib/companion/fields";
 
 const MOODS = ["foggy", "low", "okay", "good", "bright"];
 const ENERGIES = ["empty", "low", "steady", "good", "full"];
@@ -255,14 +256,14 @@ export function BreakdownView({ b, today, tz, name, heading: Heading = "h2" }: {
                       <span className="truncate">{h.title}</span>
                     </Link>
                     <span className="shrink-0 text-[0.875rem] tabular-nums text-ink/70">
-                      {h.days.length} of {plural(h.of, "day")}
+                      {h.days.length} of {plural(h.of, habitGap(h.title) > 1 ? "time" : "day")}
                     </span>
                   </div>
                   <div className="mt-2.5">
                     {long ? (
-                      <Meter value={h.of ? h.days.length / h.of : null} />
+                      <Meter value={h.of ? Math.min(1, h.days.length / h.of) : null} />
                     ) : (
-                      <DayStrip from={h.since ?? b.counted} upTo={b.upTo} on={h.days} hue={h.hue} label={`${h.title}: done on ${h.days.length} of ${h.of} days`} />
+                      <DayStrip from={h.since ?? b.counted} upTo={b.upTo} on={h.days} hue={h.hue} label={`${h.title}: done ${h.days.length} of ${h.of} ${habitGap(h.title) > 1 ? "times" : "days"}`} />
                     )}
                   </div>
                 </li>

@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     if (!limit.ok) return jsonError("Too many requests. Try again in a minute.", 429);
 
     const { description } = SuggestSchema.parse(await request.json().catch(() => null));
-    return NextResponse.json(await suggestTemplate(description));
+    return NextResponse.json(await suggestTemplate(description, session.user.id));
   } catch (err) {
     return companionError(err);
   }

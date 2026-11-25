@@ -9,6 +9,7 @@ import { addDays, dateToDay, dayDiff, dayToDate, localDay } from "@/lib/companio
 import { focusedFor } from "@/lib/missions/core";
 import { dayMoods, pageScale } from "@/lib/patterns/compute";
 import type { BreakdownParts, BreakdownStats, BreakdownThread } from "@/lib/types";
+import { habitGap, habitTimes } from "@/lib/companion/fields";
 
 /*
  * What happened in a stretch of days, worked out from what the writer logged: threads (their
@@ -40,12 +41,20 @@ export function emptyStats(): BreakdownStats {
   };
 }
 
-/** The days a habit was done: the ones recorded, the run its streak ends on, and days it logged a number. */
+/**
+ * The days a habit was done: the ones recorded, and days it logged a number. A daily habit's
+ * run from before done days were recorded is laid out from its streak, but only before the first
+ * recorded day: after that the record is the truth, and a "3x a week" habit's run has rest days in it.
+ */
 export function habitDays(t: IThread, tz: string): Set<string> {
   const days = new Set(t.doneDays ?? []);
-  if (t.streak > 0) {
+  if (t.streak > 0 && habitGap(t.title) === 1) {
+    const first = [...days].sort()[0];
     const last = localDay(tz, t.lastTouchedAt);
-    for (let i = 0; i < Math.min(t.streak, 400); i++) days.add(addDays(last, -i));
+    for (let i = 0; i < Math.min(t.streak, 400); i++) {
+      const d = addDays(last, -i);
+      if (!first || d < first) days.add(d);
+    }
   }
   for (const f of t.fields ?? []) for (const d of f.days ?? []) if (d.value > 0) days.add(d.day);
   return days;
@@ -157,7 +166,8 @@ export async function gather(userId: string, tz: string, from: string, upTo: str
       const did = [...habitDays(t, tz)].filter(inside).sort();
       did.forEach((d) => active.add(d));
       const since = created > from ? created : from;
-      const of = dayDiff(upTo, since) + 1 - (going && !did.includes(going) ? 1 : 0);
+      // What the habit asked for in the stretch: every day for a daily one, "3x a week" three in seven.
+      const of = Math.ceil(((dayDiff(upTo, since) + 1 - (going && !did.includes(going) ? 1 : 0)) * habitTimes(t.title)) / 7);
       if (of > 0 && (did.length || t.status !== "paused")) stats.habits.push({ ...ref(t), days: did, of, since });
       continue;
     }
@@ -216,7 +226,7 @@ export function scoreOf(s: BreakdownStats): { score: number | null; parts: Break
   const parts: BreakdownParts = {
     showingUp: s.days > 0 ? s.active.length / s.days : null,
     progress: enough > 0 ? Math.min(1, (s.done.length + 0.6 * s.moved.length) / enough) : null,
-    habits: s.habits.length ? s.habits.reduce((n, h) => n + h.days.length / h.of, 0) / s.habits.length : null,
+    habits: s.habits.length ? s.habits.reduce((n, h) => n + Math.min(1, h.days.length / h.of), 0) / s.habits.length : null,
   };
   if (!s.active.length && !s.done.length) return { score: null, parts };
   let sum = 0;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { signIn } from "next-auth/react";
 import { PasswordField } from "@/components/auth/PasswordField";
 import { Button } from "@/components/shared/Button";
 import { FormAlert } from "@/components/shared/TextField";
@@ -55,7 +56,10 @@ export function ChangePasswordForm() {
         }
         return;
       }
-      toast("Password updated", "success");
+      // The new password signed every device out, this one included: sign this one back in with it.
+      const { email } = (await res.json().catch(() => ({}))) as { email?: string };
+      if (email) await signIn("credentials", { email, password: newPassword, redirect: false }).catch(() => undefined);
+      toast("Password updated. Other devices are signed out.", "success");
       setCurrentPassword("");
       setNewPassword("");
       setConfirm("");

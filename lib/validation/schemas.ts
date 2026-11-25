@@ -13,13 +13,32 @@ export const FieldTypeEnum = z.enum([
   "divider",
 ]);
 
+// Every string and list a writer can store has a size, so one account can't fill the database.
+const finite = z.number().finite();
+
+/** FieldConfig (lib/types.ts), and nothing else: keys it doesn't know are dropped. */
+export const FieldConfigSchema = z.object({
+  placeholder: z.string().max(200).optional(),
+  maxLength: finite.optional(),
+  minLength: finite.optional(),
+  unit: z.string().max(30).optional(),
+  min: finite.optional(),
+  max: finite.optional(),
+  emojis: z.array(z.string().max(16)).max(10).optional(),
+  yesLabel: z.string().max(40).optional(),
+  noLabel: z.string().max(40).optional(),
+  allowedTags: z.array(z.string().max(40)).max(50).optional(),
+  freeForm: z.boolean().optional(),
+  sectionLabel: z.string().max(120).optional(),
+});
+
 export const TemplateFieldSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1).max(64),
   type: FieldTypeEnum,
   label: z.string().min(1).max(120),
   required: z.boolean().default(false),
-  order: z.number().int().min(0),
-  config: z.record(z.string(), z.any()).default({}),
+  order: z.number().int().min(0).max(100),
+  config: FieldConfigSchema.default({}),
 });
 
 export const TemplateUpsertSchema = z.object({
@@ -66,18 +85,21 @@ export const ChangePasswordSchema = z.object({
   newPassword: z.string().min(8).max(120),
 });
 
+/** Room for a page's 5,000 words in one answer, and no more. */
+export const ANSWER_MAX = 40_000;
+
 export const EntryFieldValueSchema = z.union([
-  z.string(),
-  z.number(),
+  z.string().max(ANSWER_MAX),
+  finite,
   z.boolean(),
-  z.array(z.string()),
+  z.array(z.string().max(100)).max(50),
   z.null(),
 ]);
 
 export const EntryFieldSchema = z.object({
-  fieldId: z.string(),
+  fieldId: z.string().max(80),
   type: FieldTypeEnum,
-  label: z.string(),
+  label: z.string().max(300),
   value: EntryFieldValueSchema,
 });
 

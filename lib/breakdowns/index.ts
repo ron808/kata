@@ -229,7 +229,7 @@ export async function writeTake(ctx: Pick<EngineCtx, "userId" | "day" | "now" | 
       temperature: 0.5,
       max_tokens: 700,
     },
-    { models: WRITING_MODELS, timeout: 20_000 }
+    { models: WRITING_MODELS, timeout: 20_000, by: ctx.userId }
   );
   const take = cleanTake(res.choices[0]?.message?.content, ctx.companion);
   if (take) await Breakdown.updateOne({ _id: doc._id, take: "" }, { $set: { take, takeAt: ctx.now } });

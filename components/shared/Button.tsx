@@ -16,7 +16,7 @@ const SIZES: Record<ButtonSize, string> = {
 };
 
 const VARIANTS: Record<ButtonVariant, string> = {
-  primary: "press border-2 border-edge bg-accent text-on-accent",
+  primary: "press border-2 border-edge bg-accent-fill text-on-accent",
   secondary: "press border-2 border-edge bg-surface text-ink",
   quiet: "text-ink/75 hover:bg-ink/[0.06] hover:text-ink",
   danger: "press border-2 border-edge bg-surface text-bad",

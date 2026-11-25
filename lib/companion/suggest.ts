@@ -93,7 +93,7 @@ Rules:
 - number fields may set config.unit, config.min, config.max. tags fields may set config.freeForm to true.
 - name: 2 to 4 words. description: one plain sentence.`;
 
-async function fromGroq(description: string): Promise<SuggestedTemplate | null> {
+async function fromGroq(description: string, by?: string): Promise<SuggestedTemplate | null> {
   try {
     const completion = await complete(
       {
@@ -105,7 +105,7 @@ async function fromGroq(description: string): Promise<SuggestedTemplate | null> 
           { role: "user", content: description },
         ],
       },
-      { timeout: 6000 }
+      { timeout: 6000, by }
     );
     const raw = completion.choices[0]?.message?.content;
     if (!raw) return null;
@@ -129,6 +129,6 @@ async function fromGroq(description: string): Promise<SuggestedTemplate | null> 
   }
 }
 
-export async function suggestTemplate(description: string): Promise<SuggestedTemplate> {
-  return (isGroqConfigured() ? await fromGroq(description) : null) ?? fromKeywords(description);
+export async function suggestTemplate(description: string, by?: string): Promise<SuggestedTemplate> {
+  return (isGroqConfigured() ? await fromGroq(description, by) : null) ?? fromKeywords(description);
 }

@@ -18,6 +18,8 @@ function make(limit: number, window: Parameters<typeof Ratelimit.slidingWindow>[
 export const limiters = {
   register: make(3, "1 h"),
   login: make(10, "15 m"),
+  /** Sign-in attempts from one address, across accounts (each account also counts its own, in the database). */
+  loginIp: make(50, "15 m"),
   entryCreate: make(400, "1 h"),
   forgotPassword: make(5, "1 h"),
   resetPassword: make(10, "1 h"),
@@ -35,8 +37,15 @@ export async function checkLimit(
   identifier: string
 ): Promise<{ ok: boolean; reset?: number }> {
   if (!limiter) return { ok: true };
-  const res = await limiter.limit(identifier);
-  return { ok: res.success, reset: res.reset };
+  try {
+    const res = await limiter.limit(identifier);
+    return { ok: res.success, reset: res.reset };
+  } catch (err) {
+    // Upstash down or misconfigured: let the request through rather than fail every route. The
+    // limits that matter most (sign-in guesses, model calls) are kept in the database as well.
+    console.error("ratelimit", err);
+    return { ok: true };
+  }
 }
 
 export function clientIdentifier(req: Request, fallback = "anon"): string {

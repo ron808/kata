@@ -8,8 +8,9 @@ import type { ConversationT, DirectMessageT, ThreadOpenT } from "@/lib/types";
 import { TYPING_FOR_MS } from "./active";
 import { isObjectId } from "./db";
 import { hueOf } from "./dto";
-import { HANDLE_PATTERN, NEEDS_HANDLE, normalizeHandle } from "./handles";
+import { HANDLE_PATTERN, NEEDS_HANDLE, byHandle, normalizeHandle } from "./handles";
 import { seesActivity } from "./presence";
+import { dropFollow } from "./actions";
 import { blockShared } from "./sharing";
 
 /*
@@ -53,7 +54,7 @@ function toMessage(m: Pick<IDirectMessage, "_id" | "text" | "from" | "createdAt"
 async function personByHandle(raw: string): Promise<Person | null> {
   const handle = normalizeHandle(raw);
   if (!HANDLE_PATTERN.test(handle)) return null;
-  return User.findOne({ handle }).select(PERSON).lean<Person>();
+  return User.findOne(byHandle(handle)).select(PERSON).lean<Person>();
 }
 
 /** Who follows whom between the two of them. */
@@ -88,7 +89,12 @@ async function closedReason(
 /** Everyone the viewer is writing with, the latest first. */
 export async function listConversations(me: string): Promise<ConversationT[]> {
   if (!isObjectId(me)) return [];
-  const convos = await Conversation.find({ members: new Types.ObjectId(me) }).sort({ lastAt: -1 }).limit(PAGE).lean<IConversation[]>();
+  const mine = new Types.ObjectId(me);
+  // A block made before anyone wrote is only on the blocker's list (to unblock from), never the other's.
+  const convos = await Conversation.find({ members: mine, $or: [{ lastFrom: { $ne: null } }, { blockedBy: mine }] })
+    .sort({ lastAt: -1 })
+    .limit(PAGE)
+    .lean<IConversation[]>();
   const others = convos.map((c) => c.members.find((m) => String(m) !== me)).filter((id): id is Types.ObjectId => Boolean(id));
   const [found, viewer, out, back] = await Promise.all([
     User.find({ _id: { $in: others } }).select(PERSON).lean<Person[]>(),
@@ -218,7 +224,10 @@ export async function setTyping(me: string, handle: string, typing: boolean): Pr
   return true;
 }
 
-/** Stops (or lets back) someone's messages. */
+/**
+ * Blocks someone, or lets them back. A block ends both follows and cuts everything between them
+ * (lib/social/visibility.ts); unblocking doesn't bring the follows back.
+ */
 export async function setBlocked(me: string, handle: string, blocked: boolean): Promise<Outcome<{ blocked: boolean }>> {
   const them = await personByHandle(handle);
   if (!them?.handle || !isObjectId(me) || String(them._id) === me) return fail("Not found", 404);
@@ -232,6 +241,6 @@ export async function setBlocked(me: string, handle: string, blocked: boolean): 
     },
     { upsert: blocked }
   );
-  if (blocked) await blockShared(mine, them._id);
+  if (blocked) await Promise.all([blockShared(mine, them._id), dropFollow(mine, them._id), dropFollow(them._id, mine)]);
   return { ok: true, value: { blocked } };
 }

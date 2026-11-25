@@ -4,7 +4,10 @@ import { Template } from "@/lib/db/models/Template";
 import { User } from "@/lib/db/models/User";
 import { TemplateUpsertSchema } from "@/lib/validation/schemas";
 import { handleError, jsonError, requireUser } from "@/lib/api";
-import { myPages } from "@/lib/templates/mine";
+import { checkLimit, limiters } from "@/lib/ratelimit/upstash";
+import { PAGES_MOST, myPages, roomForPage } from "@/lib/templates/mine";
+
+const FULL = `You can keep ${PAGES_MOST} pages. Delete one in Your pages to make another.`;
 
 /** The writer's own pages, today's first. */
 export async function GET() {
@@ -23,9 +26,11 @@ export async function POST(request: Request) {
     const { session, response } = await requireUser();
     if (response) return response;
     await connectDB();
+    if (!(await checkLimit(limiters.general, `templates:${session.user.id}`)).ok) return jsonError("That’s a lot of saving. Try again in a minute.", 429);
 
     const body = await request.json();
     const data = TemplateUpsertSchema.parse(body);
+    if (!data._id && !(await roomForPage(session.user.id))) return jsonError(FULL, 409);
 
     let template;
     if (data._id) {

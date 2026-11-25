@@ -32,6 +32,8 @@ export default auth((req) => {
     (p) => pathname === p || pathname.startsWith(`${p}/`)
   );
   if (!needsAuth) return NextResponse.next();
+  // An account deleted on another device: the goodbye page says so and signs this one out.
+  if (req.auth?.gone) return NextResponse.redirect(new URL("/bye", req.url));
   if (req.auth?.user?.id) return NextResponse.next();
 
   const url = req.nextUrl.clone();

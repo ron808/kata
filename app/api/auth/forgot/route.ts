@@ -25,6 +25,20 @@ export async function POST(request: Request) {
     // Always return 200 — don't reveal whether the email exists.
     if (!user) return NextResponse.json({ ok: true });
 
+    // At most one email every two minutes to an address (this holds without Upstash), and only the
+    // newest link works: asking again ends the one before.
+    if (await PasswordResetToken.exists({ userId: user._id, createdAt: { $gte: new Date(Date.now() - 2 * 60_000) } })) {
+      return NextResponse.json({ ok: true });
+    }
+    await PasswordResetToken.deleteMany({ userId: user._id });
+
+    // At most one email every two minutes to an address (this holds without Upstash), and only the
+    // newest link works: asking again ends the one before.
+    if (await PasswordResetToken.exists({ userId: user._id, createdAt: { $gte: new Date(Date.now() - 2 * 60_000) } })) {
+      return NextResponse.json({ ok: true });
+    }
+    await PasswordResetToken.deleteMany({ userId: user._id });
+
     const rawToken = crypto.randomBytes(32).toString("hex");
     const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
     const expiresAt = new Date(Date.now() + TOKEN_TTL_MIN * 60 * 1000);
